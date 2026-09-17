@@ -48,7 +48,7 @@
     for (const el of $$('[title*="{"]', root))
       el.title = withKeys(el.title);
   }
-  var LH = 20;
+  var LH2 = 20;
   var CHUNK = 1000;
   var OVERSCAN = 24;
   var S2 = {
@@ -145,7 +145,7 @@
     editor.style.setProperty("--gw", digits);
     const gutter = digits * S2.chW + 30;
     const w = S2.wrap ? vp.clientWidth : Math.max(vp.clientWidth, gutter + (d.maxCols + 4) * S2.chW);
-    sizer.style.height = d.total * LH + Math.max(120, vp.clientHeight * 0.5) + "px";
+    sizer.style.height = d.total * LH2 + Math.max(120, vp.clientHeight * 0.5) + "px";
     sizer.style.width = w + "px";
     rowsEl.style.width = w + "px";
   }
@@ -204,8 +204,8 @@
       return;
     }
     const top = vp.scrollTop;
-    const first = Math.max(0, Math.floor(top / LH) - OVERSCAN);
-    const count = Math.ceil(vp.clientHeight / LH) + OVERSCAN * 2;
+    const first = Math.max(0, Math.floor(top / LH2) - OVERSCAN);
+    const count = Math.ceil(vp.clientHeight / LH2) + OVERSCAN * 2;
     const last = Math.min(d.total, first + count);
     ensureChunks(d, first, last);
     let html = "";
@@ -229,7 +229,7 @@
       html += '<div class="' + rc + '" data-l="' + n + '">' + '<div class="' + gc + '">' + n + '</div><div class="c">' + (body === undefined ? "" : body) + "</div></div>";
     }
     const sel = saveSelection();
-    rowsEl.style.transform = "translateY(" + first * LH + "px)";
+    rowsEl.style.transform = "translateY(" + first * LH2 + "px)";
     rowsEl.innerHTML = html;
     rowsEl.classList.toggle("all", S2.selAll === d);
     decorate(first, last);
@@ -259,7 +259,7 @@
       r.collapse(true);
       const rect = r.getClientRects()[0] || r.getBoundingClientRect();
       x = rect.left;
-      y = S2.wrap ? rect.top - (LH - rect.height) / 2 : row.getBoundingClientRect().top;
+      y = S2.wrap ? rect.top - (LH2 - rect.height) / 2 : row.getBoundingClientRect().top;
     } else {
       const cr = code.getBoundingClientRect();
       x = cr.left + parseFloat(getComputedStyle(code).paddingLeft || "0");
@@ -936,12 +936,22 @@
     }
     const h = S2.find.hits[S2.find.active];
     d.cur = h.line;
-    const y = (h.line - 1) * LH;
-    if (y < vp.scrollTop + LH * 2 || y > vp.scrollTop + vp.clientHeight - LH * 3)
+    const y = (h.line - 1) * LH2;
+    if (y < vp.scrollTop + LH2 * 2 || y > vp.scrollTop + vp.clientHeight - LH2 * 3)
       centerLine(h.line);
     $("#find-count").textContent = S2.find.active + 1 + " / " + n;
     render();
     updateStatus();
+  }
+  function findNextMatch(delta = 1) {
+    if (!S2.find || !S2.find.hits || !S2.find.hits.length) {
+      if (findInput.value) {
+        runFind();
+        return;
+      }
+      return;
+    }
+    jumpToHit(S2.find.active + delta);
   }
   function initFind() {
     findInput.addEventListener("input", runFind);
@@ -1497,6 +1507,14 @@
       d.selAnchor = { line: d.cur, col };
     }
   }
+  function clearSelection(d) {
+    if (d)
+      d.selAnchor = null;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && !sel.isCollapsed && vp.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+      sel.removeAllRanges();
+    }
+  }
   function moveCol(delta, shift = false) {
     const d = doc_();
     if (!d)
@@ -1601,11 +1619,11 @@
     else
       d.selAnchor = null;
     d.cur = Math.max(1, Math.min(d.total, d.cur + delta));
-    const y = (d.cur - 1) * LH;
+    const y = (d.cur - 1) * LH2;
     if (y < vp.scrollTop)
-      vp.scrollTop = y - LH;
-    else if (y > vp.scrollTop + vp.clientHeight - LH * 2)
-      vp.scrollTop = y - vp.clientHeight + LH * 3;
+      vp.scrollTop = y - LH2;
+    else if (y > vp.scrollTop + vp.clientHeight - LH2 * 2)
+      vp.scrollTop = y - vp.clientHeight + LH2 * 3;
     render();
     updateStatus();
     updateDomSelection();
@@ -2450,7 +2468,7 @@
     return 1;
   }
   function sourceToLine(line) {
-    vp.scrollTop = (line - 1) * LH;
+    vp.scrollTop = (line - 1) * LH2;
     for (let i = 0;i < 3; i++) {
       paint();
       const r = rowFor(line);
@@ -3542,7 +3560,7 @@
       previewLine(n);
       return;
     }
-    const y = (n - 1) * LH - Math.max(0, vp.clientHeight / 2 - LH * 2);
+    const y = (n - 1) * LH2 - Math.max(0, vp.clientHeight / 2 - LH2 * 2);
     vp.scrollTop = Math.max(0, y);
   }
   function closeTab(i) {
@@ -3759,6 +3777,747 @@
       setTheme(all[0].id, false);
   }
 
+  // web/src/vim.js
+  var vimEnabled = false;
+  var vimMode = "NORMAL";
+  var vimCount = "";
+  var vimPending = "";
+  var vimPendingTimer = null;
+  var WORD_RE = /[A-Za-z0-9_$]/;
+  function isVimEnabled() {
+    return vimEnabled;
+  }
+  function setVimModeEnabled(enabled, persist = true) {
+    vimEnabled = !!enabled;
+    if (!vimEnabled) {
+      exitVisualMode();
+      resetVimState();
+    }
+    document.body.classList.toggle("vim-mode-enabled", vimEnabled);
+    updateVimCaret();
+    updateVimStatus();
+    const chip = $("#st-vim");
+    if (chip)
+      chip.hidden = !vimEnabled;
+    const helpBtn = $("#btn-vim-help");
+    if (helpBtn)
+      helpBtn.hidden = !vimEnabled;
+    if (persist) {
+      try {
+        localStorage.setItem("px0.editor.vimMode", vimEnabled ? "true" : "false");
+      } catch {}
+      if (S2.settings)
+        S2.settings["editor.vimMode"] = vimEnabled;
+    }
+  }
+  function updateVimCaret() {
+    if (!vimEnabled) {
+      document.body.classList.remove("vim-normal-caret");
+      return;
+    }
+    document.body.classList.toggle("vim-normal-caret", vimMode === "NORMAL");
+  }
+  function resetVimState() {
+    vimCount = "";
+    vimPending = "";
+    if (vimPendingTimer) {
+      clearTimeout(vimPendingTimer);
+      vimPendingTimer = null;
+    }
+    updateVimStatus();
+  }
+  function setVimPending(key) {
+    vimPending = key;
+    if (vimPendingTimer)
+      clearTimeout(vimPendingTimer);
+    vimPendingTimer = setTimeout(() => {
+      resetVimState();
+    }, 1400);
+    updateVimStatus();
+  }
+  function getCount() {
+    const c = parseInt(vimCount, 10);
+    return isNaN(c) || c <= 0 ? 1 : c;
+  }
+  function updateVimStatus() {
+    const chip = $("#st-vim");
+    if (!chip)
+      return;
+    chip.hidden = !vimEnabled;
+    if (!vimEnabled)
+      return;
+    chip.className = "status-vim-chip";
+    let modeLabel = vimMode;
+    if (vimMode === "VISUAL_LINE") {
+      chip.classList.add("mode-visual-line");
+      modeLabel = "V-LINE";
+    } else if (vimMode === "VISUAL") {
+      chip.classList.add("mode-visual");
+      modeLabel = "VISUAL";
+    } else {
+      chip.classList.add("mode-normal");
+      modeLabel = "NORMAL";
+    }
+    let extra = "";
+    if (vimCount)
+      extra += vimCount;
+    if (vimPending)
+      extra += vimPending;
+    if (extra) {
+      chip.innerHTML = esc(modeLabel) + ' <span class="status-vim-pending">' + esc(extra) + "</span>";
+    } else {
+      chip.textContent = modeLabel;
+    }
+  }
+  function wordAtCaret() {
+    const d = doc_();
+    if (!d)
+      return null;
+    const row = rowFor(d.cur);
+    if (!row)
+      return S2.at || null;
+    const code = row.querySelector(".c");
+    if (!code)
+      return S2.at || null;
+    const full = code.textContent;
+    let col = Math.min(d.col === Infinity ? full.length : d.col || 0, full.length);
+    if (col >= full.length && col > 0)
+      col = full.length - 1;
+    let a = col, b = col;
+    if (full[a] && WORD_RE.test(full[a])) {
+      while (a > 0 && WORD_RE.test(full[a - 1]))
+        a--;
+      while (b < full.length && WORD_RE.test(full[b]))
+        b++;
+      if (a < b)
+        return { word: full.slice(a, b), line: d.cur, col: a, path: d.path };
+    }
+    return S2.at || null;
+  }
+  function showHoverForCaret() {
+    const at = wordAtCaret();
+    if (!at)
+      return;
+    const caret = $("#caret");
+    let x = 120, y = 120;
+    if (caret) {
+      const r = caret.getBoundingClientRect();
+      x = Math.max(16, r.left);
+      y = r.bottom + 4;
+    }
+    showHover(at, x, y);
+  }
+  function enterVisualMode(lineWise = false) {
+    const d = doc_();
+    if (!d)
+      return;
+    vimMode = lineWise ? "VISUAL_LINE" : "VISUAL";
+    const row = rowFor(d.cur);
+    const len = row ? row.querySelector(".c")?.textContent.length || 0 : 0;
+    if (lineWise) {
+      d.selAnchor = { line: d.cur, col: 0 };
+      d.col = len;
+    } else {
+      if (!d.selAnchor) {
+        const col = d.col === Infinity ? len : d.col || 0;
+        d.selAnchor = { line: d.cur, col };
+      }
+    }
+    placeCaret();
+    updateDomSelection();
+    updateVimCaret();
+    updateVimStatus();
+  }
+  function exitVisualMode() {
+    const d = doc_();
+    vimMode = "NORMAL";
+    if (d)
+      clearSelection(d);
+    resetVimState();
+    updateVimCaret();
+    updateVimStatus();
+  }
+  function ensureLineSelection() {
+    const d = doc_();
+    if (!d || vimMode !== "VISUAL_LINE")
+      return;
+    if (!d.selAnchor)
+      d.selAnchor = { line: d.cur, col: 0 };
+    const row = rowFor(d.cur);
+    d.col = row ? row.querySelector(".c")?.textContent.length || 0 : 0;
+    placeCaret();
+    updateDomSelection();
+  }
+  function handleVimKeyDown(e) {
+    if (!vimEnabled)
+      return false;
+    const active = document.activeElement;
+    if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) {
+      return false;
+    }
+    if (e.key === "Escape") {
+      if (vimMode !== "NORMAL") {
+        e.preventDefault();
+        exitVisualMode();
+        return true;
+      }
+      if (vimPending || vimCount) {
+        e.preventDefault();
+        resetVimState();
+        return true;
+      }
+      return false;
+    }
+    const d = doc_();
+    if (!d)
+      return false;
+    const isVisual = vimMode === "VISUAL" || vimMode === "VISUAL_LINE";
+    if (e.ctrlKey && !e.altKey && !e.metaKey) {
+      if (e.key === "d") {
+        e.preventDefault();
+        const half = Math.max(1, Math.floor(vp.clientHeight / LH / 2)) * getCount();
+        moveCursor(half, isVisual);
+        if (vimMode === "VISUAL_LINE")
+          ensureLineSelection();
+        resetVimState();
+        return true;
+      }
+      if (e.key === "u") {
+        e.preventDefault();
+        const half = Math.max(1, Math.floor(vp.clientHeight / LH / 2)) * getCount();
+        moveCursor(-half, isVisual);
+        if (vimMode === "VISUAL_LINE")
+          ensureLineSelection();
+        resetVimState();
+        return true;
+      }
+      if (e.key === "f") {
+        e.preventDefault();
+        const page = Math.max(1, Math.floor(vp.clientHeight / LH) - 2) * getCount();
+        moveCursor(page, isVisual);
+        if (vimMode === "VISUAL_LINE")
+          ensureLineSelection();
+        resetVimState();
+        return true;
+      }
+      if (e.key === "b") {
+        e.preventDefault();
+        const page = Math.max(1, Math.floor(vp.clientHeight / LH) - 2) * getCount();
+        moveCursor(-page, isVisual);
+        if (vimMode === "VISUAL_LINE")
+          ensureLineSelection();
+        resetVimState();
+        return true;
+      }
+      if (e.key === "o") {
+        e.preventDefault();
+        go(-getCount());
+        resetVimState();
+        return true;
+      }
+      if (e.key === "i") {
+        e.preventDefault();
+        go(getCount());
+        resetVimState();
+        return true;
+      }
+    }
+    if (e.metaKey || e.altKey)
+      return false;
+    if (isVisual) {
+      if (e.key === "v" && !e.shiftKey) {
+        e.preventDefault();
+        if (vimMode === "VISUAL")
+          exitVisualMode();
+        else
+          enterVisualMode(false);
+        return true;
+      }
+      if (e.key === "V") {
+        e.preventDefault();
+        if (vimMode === "VISUAL_LINE")
+          exitVisualMode();
+        else
+          enterVisualMode(true);
+        return true;
+      }
+      if (e.key === "y") {
+        e.preventDefault();
+        const info = getSelectedRangeInfo();
+        if (info && info.text) {
+          const lineCount = info.l2 - info.l1 + 1;
+          copyToClipboard(info.text, "Yanked " + (lineCount === 1 ? "1 line" : lineCount + " lines"));
+        }
+        exitVisualMode();
+        return true;
+      }
+      if (e.key === "Y") {
+        e.preventDefault();
+        runSelectionAction("copy-ref");
+        exitVisualMode();
+        return true;
+      }
+      if (e.key === "e" || e.key === "c") {
+        e.preventDefault();
+        runSelectionAction("agent-edit");
+        exitVisualMode();
+        return true;
+      }
+      if (e.key === "u") {
+        e.preventDefault();
+        runSelectionAction("usages");
+        exitVisualMode();
+        return true;
+      }
+    }
+    if (!vimPending && /^[0-9]$/.test(e.key)) {
+      if (e.key === "0" && !vimCount) {} else {
+        e.preventDefault();
+        vimCount += e.key;
+        updateVimStatus();
+        return true;
+      }
+    }
+    if (vimPending === "g") {
+      e.preventDefault();
+      if (e.key === "g") {
+        const count2 = parseInt(vimCount, 10);
+        if (!isNaN(count2) && count2 > 0) {
+          d.cur = Math.max(1, Math.min(d.total, count2));
+          d.col = 0;
+          const y = (d.cur - 1) * LH;
+          vp.scrollTop = Math.max(0, y - LH * 3);
+          render();
+          updateStatus();
+        } else {
+          vp.scrollTop = 0;
+          d.cur = 1;
+          d.col = 0;
+          render();
+          updateStatus();
+        }
+        if (isVisual) {
+          placeCaret();
+          updateDomSelection();
+          if (vimMode === "VISUAL_LINE")
+            ensureLineSelection();
+        }
+      } else if (e.key === "d") {
+        const w = wordAtCaret();
+        if (w) {
+          pushHistory(d.path, d.cur);
+          gotoDefinition(w);
+        }
+      } else if (e.key === "r") {
+        findReferences();
+      } else if (e.key === "h") {
+        showCalls();
+      } else if (e.key === "t") {
+        const count2 = parseInt(vimCount, 10);
+        if (!isNaN(count2) && count2 > 0 && count2 <= S2.tabs.length) {
+          switchTab(count2 - 1);
+        } else if (S2.tabs.length > 1) {
+          switchTab((S2.active + 1) % S2.tabs.length);
+        }
+      } else if (e.key === "T") {
+        if (S2.tabs.length > 1) {
+          switchTab((S2.active - 1 + S2.tabs.length) % S2.tabs.length);
+        }
+      }
+      resetVimState();
+      return true;
+    }
+    if (vimPending === "z") {
+      e.preventDefault();
+      if (e.key === "z") {
+        vp.scrollTop = Math.max(0, (d.cur - 1) * LH - (vp.clientHeight - LH) / 2);
+        render();
+        updateStatus();
+      } else if (e.key === "t") {
+        vp.scrollTop = Math.max(0, (d.cur - 1) * LH);
+        render();
+        updateStatus();
+      } else if (e.key === "b") {
+        vp.scrollTop = Math.max(0, (d.cur - 1) * LH - vp.clientHeight + LH * 2);
+        render();
+        updateStatus();
+      }
+      resetVimState();
+      return true;
+    }
+    const count = getCount();
+    switch (e.key) {
+      case "h": {
+        e.preventDefault();
+        moveCol(-count, isVisual);
+        resetVimState();
+        return true;
+      }
+      case "l": {
+        e.preventDefault();
+        moveCol(count, isVisual);
+        resetVimState();
+        return true;
+      }
+      case "j": {
+        e.preventDefault();
+        moveCursor(count, isVisual);
+        if (vimMode === "VISUAL_LINE")
+          ensureLineSelection();
+        resetVimState();
+        return true;
+      }
+      case "k": {
+        e.preventDefault();
+        moveCursor(-count, isVisual);
+        if (vimMode === "VISUAL_LINE")
+          ensureLineSelection();
+        resetVimState();
+        return true;
+      }
+      case "w": {
+        e.preventDefault();
+        moveWord(count, isVisual);
+        if (vimMode === "VISUAL_LINE")
+          ensureLineSelection();
+        resetVimState();
+        return true;
+      }
+      case "b": {
+        e.preventDefault();
+        moveWord(-count, isVisual);
+        if (vimMode === "VISUAL_LINE")
+          ensureLineSelection();
+        resetVimState();
+        return true;
+      }
+      case "0": {
+        e.preventDefault();
+        caretToEdge(false, isVisual);
+        resetVimState();
+        return true;
+      }
+      case "$": {
+        e.preventDefault();
+        caretToEdge(true, isVisual);
+        resetVimState();
+        return true;
+      }
+      case "^": {
+        e.preventDefault();
+        const row = rowFor(d.cur);
+        const text = row ? row.querySelector(".c")?.textContent || "" : "";
+        const idx = text.search(/\S/);
+        d.col = idx >= 0 ? idx : 0;
+        revealCaretX(placeCaret());
+        if (isVisual)
+          updateDomSelection();
+        resetVimState();
+        return true;
+      }
+      case "G": {
+        e.preventDefault();
+        const targetLine = vimCount ? parseInt(vimCount, 10) : d.total;
+        d.cur = Math.max(1, Math.min(d.total, targetLine));
+        d.col = 0;
+        const y = (d.cur - 1) * LH;
+        vp.scrollTop = Math.max(0, y - LH * 3);
+        render();
+        updateStatus();
+        if (isVisual) {
+          placeCaret();
+          updateDomSelection();
+          if (vimMode === "VISUAL_LINE")
+            ensureLineSelection();
+        }
+        resetVimState();
+        return true;
+      }
+      case "g": {
+        e.preventDefault();
+        setVimPending("g");
+        return true;
+      }
+      case "z": {
+        e.preventDefault();
+        setVimPending("z");
+        return true;
+      }
+      case "H": {
+        e.preventDefault();
+        const topL = Math.floor(vp.scrollTop / LH) + 1;
+        d.cur = Math.max(1, Math.min(d.total, topL));
+        render();
+        updateStatus();
+        if (isVisual) {
+          placeCaret();
+          updateDomSelection();
+          if (vimMode === "VISUAL_LINE")
+            ensureLineSelection();
+        }
+        resetVimState();
+        return true;
+      }
+      case "M": {
+        e.preventDefault();
+        const midL = Math.floor((vp.scrollTop + vp.clientHeight / 2) / LH) + 1;
+        d.cur = Math.max(1, Math.min(d.total, midL));
+        render();
+        updateStatus();
+        if (isVisual) {
+          placeCaret();
+          updateDomSelection();
+          if (vimMode === "VISUAL_LINE")
+            ensureLineSelection();
+        }
+        resetVimState();
+        return true;
+      }
+      case "L": {
+        e.preventDefault();
+        const botL = Math.floor((vp.scrollTop + vp.clientHeight - LH) / LH);
+        d.cur = Math.max(1, Math.min(d.total, botL));
+        render();
+        updateStatus();
+        if (isVisual) {
+          placeCaret();
+          updateDomSelection();
+          if (vimMode === "VISUAL_LINE")
+            ensureLineSelection();
+        }
+        resetVimState();
+        return true;
+      }
+      case "K": {
+        e.preventDefault();
+        showHoverForCaret();
+        resetVimState();
+        return true;
+      }
+      case "/": {
+        e.preventDefault();
+        openFind();
+        resetVimState();
+        return true;
+      }
+      case "?": {
+        e.preventDefault();
+        openFind();
+        findNextMatch(-1);
+        resetVimState();
+        return true;
+      }
+      case "n": {
+        e.preventDefault();
+        findNextMatch(1);
+        resetVimState();
+        return true;
+      }
+      case "N": {
+        e.preventDefault();
+        findNextMatch(-1);
+        resetVimState();
+        return true;
+      }
+      case "*": {
+        e.preventDefault();
+        const w = wordAtCaret();
+        if (w && w.word) {
+          S2.at = w;
+          S2.lastWord = w.word;
+          S2.occ = w.word;
+          paint();
+          openFind(w.word);
+          findNextMatch(1);
+        }
+        resetVimState();
+        return true;
+      }
+      case "#": {
+        e.preventDefault();
+        const w = wordAtCaret();
+        if (w && w.word) {
+          S2.at = w;
+          S2.lastWord = w.word;
+          S2.occ = w.word;
+          paint();
+          openFind(w.word);
+          findNextMatch(-1);
+        }
+        resetVimState();
+        return true;
+      }
+      case "v": {
+        e.preventDefault();
+        enterVisualMode(false);
+        resetVimState();
+        return true;
+      }
+      case "V": {
+        e.preventDefault();
+        enterVisualMode(true);
+        resetVimState();
+        return true;
+      }
+      case ":": {
+        e.preventDefault();
+        openPalette("command");
+        resetVimState();
+        return true;
+      }
+    }
+    return false;
+  }
+  var VIM_SHORTCUT_SECTIONS = [
+    {
+      title: "Modes & Motions",
+      items: [
+        [["h", "j", "k", "l"], "Move left, down, up, right"],
+        [["w", "b"], "Next / previous word boundary"],
+        [["0", "^", "$"], "Start of line / first non-blank / end of line"],
+        [["gg", "G"], "First line / last line (or [count]gg / [count]G)"],
+        [["Ctrl+d", "Ctrl+u"], "Scroll half-page down / up"],
+        [["Ctrl+f", "Ctrl+b"], "Scroll full-page down / up"],
+        [["zz", "zt", "zb"], "Center line / line to top / line to bottom"],
+        [["H", "M", "L"], "Move to top, middle, bottom visible line"]
+      ]
+    },
+    {
+      title: "Code Intelligence & LSP",
+      items: [
+        [["gd"], "Go to Definition (replaces F12)"],
+        [["gr"], "Find References across workspace (replaces Shift+F12)"],
+        [["K"], "Show hover documentation & signatures"],
+        [["gh"], "Call Trail (callers / callees)"],
+        [["Ctrl+o", "Ctrl+i"], "Jump back / forward in navigation history"]
+      ]
+    },
+    {
+      title: "Search & Occurrences",
+      items: [
+        [["/"], "Find in file (forward)"],
+        [["?"], "Find in file (backward)"],
+        [["n", "N"], "Next / previous match"],
+        [["*", "#"], "Search current word under cursor forward / backward"],
+        [["Esc"], "Clear highlights, search, and occurrences"]
+      ]
+    },
+    {
+      title: "Visual Mode & AI Agent Actions",
+      items: [
+        [["v"], "Character-wise visual selection"],
+        [["V"], "Line-wise visual selection"],
+        [["e", "c"], "Edit selection inline with AI coding agent"],
+        [["y"], "Yank (copy) code to clipboard"],
+        [["Y"], "Yank reference (file:line-range)"],
+        [["u"], "Find usages of selected symbol"],
+        [["Esc"], "Cancel selection and return to Normal mode"]
+      ]
+    },
+    {
+      title: "Tabs & Commands",
+      items: [
+        [["gt", "gT"], "Next tab / previous tab"],
+        [["[N]gt"], "Switch to tab N"],
+        [[":"], "Open Command Palette"]
+      ]
+    }
+  ];
+  function showVimHelp() {
+    let modal = $("#vim-helpsheet");
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "vim-helpsheet";
+      document.body.appendChild(modal);
+    }
+    const isChecked = vimEnabled ? "checked" : "";
+    modal.innerHTML = `
+    <div class="help-card vim-help-card">
+      <div class="help-header vim-help-header">
+        <div class="vim-help-title">
+          <h2>Vim Keybindings</h2>
+          <span class="help-version">Modal Navigation</span>
+        </div>
+        <div class="vim-toggle-row">
+          <label class="vim-switch-label">
+            <input type="checkbox" id="vim-toggle-input" ${isChecked}>
+            <span class="vim-switch-slider"></span>
+            <span class="vim-switch-text">${vimEnabled ? "Enabled" : "Disabled"}</span>
+          </label>
+          <button id="btn-close-vim-help" class="mini" title="Close (Esc)">✕</button>
+        </div>
+      </div>
+      <div class="vim-help-content">
+        ${VIM_SHORTCUT_SECTIONS.map((sec) => `
+          <div class="vim-help-section">
+            <div class="vim-sec-title">${esc(sec.title)}</div>
+            <dl class="help-grid vim-help-grid">
+              ${sec.items.map(([combos, v]) => `
+                <dt>${combos.map(keyCaps).filter(Boolean).join('<span class="key-or">/</span>')}</dt>
+                <dd>${esc(v)}</dd>
+              `).join("")}
+            </dl>
+          </div>
+        `).join("")}
+      </div>
+      <div class="vim-help-footer">
+        <button id="btn-switch-to-std-help" class="settings-btn-link">View Standard Shortcuts (?)</button>
+        <span class="agent-hint">Press Esc or click outside to dismiss</span>
+      </div>
+    </div>
+  `;
+    modal.hidden = false;
+    const toggleInput = modal.querySelector("#vim-toggle-input");
+    if (toggleInput) {
+      toggleInput.addEventListener("change", (e) => {
+        const active = e.target.checked;
+        setVimModeEnabled(active, true);
+        const txt = modal.querySelector(".vim-switch-text");
+        if (txt)
+          txt.textContent = active ? "Enabled" : "Disabled";
+        showToast("✓", active ? "Vim mode enabled" : "Vim mode disabled");
+      });
+    }
+    modal.querySelector("#btn-close-vim-help")?.addEventListener("click", closeVimHelp);
+    modal.querySelector("#btn-switch-to-std-help")?.addEventListener("click", () => {
+      closeVimHelp();
+      showHelp();
+    });
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal)
+        closeVimHelp();
+    });
+  }
+  function closeVimHelp() {
+    const modal = $("#vim-helpsheet");
+    if (modal)
+      modal.hidden = true;
+  }
+  function initVim() {
+    let initial = false;
+    try {
+      const val = localStorage.getItem("px0.editor.vimMode");
+      if (val === "true")
+        initial = true;
+    } catch {}
+    if (S2.settings && S2.settings["editor.vimMode"] !== undefined) {
+      initial = S2.settings["editor.vimMode"] === true || S2.settings["editor.vimMode"] === "true";
+    }
+    setVimModeEnabled(initial, false);
+    const chip = $("#st-vim");
+    if (chip) {
+      chip.addEventListener("click", () => {
+        showVimHelp();
+      });
+    }
+    const helpBtn = $("#btn-vim-help");
+    if (helpBtn) {
+      helpBtn.addEventListener("click", () => {
+        showVimHelp();
+      });
+    }
+  }
+
   // web/src/settings.js
   var settingsModalEl = null;
   var BUILTIN_SCHEMA = [
@@ -3818,6 +4577,14 @@
       type: "select",
       default: "on",
       options: ["on", "off"]
+    },
+    {
+      key: "editor.vimMode",
+      title: "Vim Keybindings",
+      description: "Enable Vim modal navigation (Normal mode, Visual mode, motions, search, and LSP shortcuts).",
+      category: "Text Editor",
+      type: "boolean",
+      default: false
     },
     {
       key: "editor.cursorStyle",
@@ -4028,14 +4795,6 @@
       category: "Agent / AI",
       type: "boolean",
       default: false
-    },
-    {
-      key: "telemetry.enabled",
-      title: "Telemetry",
-      description: "Enable anonymous usage metrics to help improve px0.",
-      category: "Security & Privacy",
-      type: "boolean",
-      default: true
     }
   ];
   var settingsData = {
@@ -4055,6 +4814,7 @@
     "workbench.colorTheme",
     "editor.wordWrap",
     "editor.lineNumbers",
+    "editor.vimMode",
     "editor.tabSize",
     "diffEditor.renderSideBySide",
     "editor.cursorStyle",
@@ -4159,6 +4919,10 @@
         try {
           localStorage.setItem("px0.mdPreview", S2.mdPreview ? "true" : "false");
         } catch {}
+        break;
+      }
+      case "editor.vimMode": {
+        setVimModeEnabled(val === true || val === "true", false);
         break;
       }
     }
@@ -4399,6 +5163,12 @@
         aptValuesHtml = presetPills;
       }
       const resetBtn = modified ? `<button class="settings-reset-btn" data-reset="${esc(key)}" title="Reset to default (${esc(String(def))})">Reset</button>` : "";
+      const extraAction = key === "editor.vimMode" ? `
+      <div style="margin: 6px 0 2px;">
+        <button type="button" class="settings-btn-link btn-vim-cheatsheet-trigger" style="cursor:pointer;font-size:11.5px;display:inline-flex;align-items:center;gap:4px;color:var(--accent-fg);">
+          <span>View Vim Keybindings Cheat Sheet</span><kbd class="footer-kbd" style="font-size:10px;">?</kbd>
+        </button>
+      </div>` : "";
       return `
       <div class="settings-card${modClass}" data-setting="${esc(key)}">
         <div class="settings-card-left">
@@ -4410,6 +5180,7 @@
           </div>
           <div class="settings-card-desc">${esc(desc)}</div>
           ${aptValuesHtml}
+          ${extraAction}
           <div class="settings-card-meta">
             <span class="settings-tag tag-current">Current: <b>${esc(String(val))}</b></span>
             <span class="settings-tag tag-default">Default: <code>${esc(String(def))}</code></span>
@@ -4572,6 +5343,12 @@
           const key = resetBtn.dataset.reset;
           if (key)
             handleResetSetting(key);
+          return;
+        }
+        const vimHelpBtn = e.target.closest(".btn-vim-cheatsheet-trigger");
+        if (vimHelpBtn) {
+          showVimHelp();
+          return;
         }
       });
     }
@@ -4632,8 +5409,13 @@
   function showHelp() {
     const h = $("#helpsheet");
     const ver = S2.meta?.version ? ` <span class="help-version">v${esc(S2.meta.version)}</span>` : "";
-    h.innerHTML = '<div class="help-card"><div class="help-header"><h2>Keyboard Shortcuts</h2>' + ver + '</div><dl class="help-grid">' + SHORTCUTS.map(([combos, v]) => "<dt>" + combos.map(keyCaps).filter(Boolean).join('<span class="key-or">/</span>') + "</dt>" + "<dd>" + esc(v) + "</dd>").join("") + "</dl></div>";
+    h.innerHTML = '<div class="help-card"><div class="help-header"><h2>Keyboard Shortcuts</h2>' + ver + '<button id="btn-switch-to-vim-help" class="settings-btn-link" style="margin-left:auto;font-size:12px;cursor:pointer;">View Vim Keybindings</button></div><dl class="help-grid">' + SHORTCUTS.map(([combos, v]) => "<dt>" + combos.map(keyCaps).filter(Boolean).join('<span class="key-or">/</span>') + "</dt>" + "<dd>" + esc(v) + "</dd>").join("") + "</dl></div>";
     h.hidden = false;
+    h.querySelector("#btn-switch-to-vim-help")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      h.hidden = true;
+      showVimHelp();
+    });
   }
   var inField = (el) => el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
   function initShortcuts() {
@@ -4668,12 +5450,18 @@
         openPalette("command");
       else if (act === "settings")
         openSettings("ui");
+      else if (act === "vim-help")
+        showVimHelp();
       else if (act === "help")
         showHelp();
     });
     addEventListener("keydown", (e) => {
       const mod = e[MOD];
       if (e.key === "Escape") {
+        if (!$("#vim-helpsheet")?.hidden) {
+          closeVimHelp();
+          return;
+        }
         if (isSettingsOpen()) {
           closeSettings();
           return;
@@ -4849,6 +5637,8 @@
         e.preventDefault();
         return;
       }
+      if (handleVimKeyDown(e))
+        return;
       if (e.key === "?") {
         e.preventDefault();
         showHelp();
@@ -4943,12 +5733,12 @@
       }
       if (e.key === "PageDown") {
         e.preventDefault();
-        moveCursor(Math.floor(vp.clientHeight / LH) - 2, shift);
+        moveCursor(Math.floor(vp.clientHeight / LH2) - 2, shift);
         return;
       }
       if (e.key === "PageUp") {
         e.preventDefault();
-        moveCursor(-(Math.floor(vp.clientHeight / LH) - 2), shift);
+        moveCursor(-(Math.floor(vp.clientHeight / LH2) - 2), shift);
         return;
       }
     }, { capture: true });
@@ -5000,6 +5790,8 @@
         closeTab(0);
     } },
     { name: withKeys("Reopen Closed Tab ({Alt+Shift+T})"), run: () => reopenClosedTab() },
+    { name: "Preferences: Toggle Vim Keybindings", run: () => setVimModeEnabled(!isVimEnabled(), true) },
+    { name: "Help: Vim Keybindings Cheat Sheet", run: showVimHelp },
     { name: "Keyboard Shortcuts", run: showHelp }
   ];
   var PAL_MODES = {
@@ -5681,6 +6473,7 @@
   initMetrics();
   initStatusFit();
   initSettings();
+  initVim();
   (async function boot() {
     try {
       initTheme();

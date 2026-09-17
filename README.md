@@ -160,7 +160,7 @@ px0 provides a built-in Settings editor modeled after VS Code. Settings are stor
 | `agent.harness` | `""` | `claude`, `gemini`, `agy`, etc. | Preferred coding agent harness |
 | `agent.timeoutSeconds` | `120` | `10` – `600` (s) | Max execution time for agent edits |
 | `agent.autoAcceptEdits` | `false` | `true`, `false` | Auto-confirm agent diffs |
-| `telemetry.enabled` | `true` | `true`, `false` | Anonymous usage metrics |
+| `editor.vimMode` | `false` | `true`, `false` | Vim modal keybindings (Normal/Visual/Motions) |
 
 
 ## Why a Dedicated Code Viewer?

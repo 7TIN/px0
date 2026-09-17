@@ -3,6 +3,7 @@ import { $, $$, esc, S, api, apiPost } from './state.js';
 import { applyEditorTypography, toggleWordWrap, toggleLineNumbers } from './renderer.js';
 import { setTheme, listThemes } from './theme.js';
 import { setLayoutPref } from './diff.js';
+import { setVimModeEnabled, showVimHelp } from './vim.js';
 
 export let settingsModalEl = null;
 const BUILTIN_SCHEMA = [
@@ -62,6 +63,14 @@ const BUILTIN_SCHEMA = [
     type: "select",
     default: "on",
     options: ["on", "off"]
+  },
+  {
+    key: "editor.vimMode",
+    title: "Vim Keybindings",
+    description: "Enable Vim modal navigation (Normal mode, Visual mode, motions, search, and LSP shortcuts).",
+    category: "Text Editor",
+    type: "boolean",
+    default: false
   },
   {
     key: "editor.cursorStyle",
@@ -263,14 +272,6 @@ const BUILTIN_SCHEMA = [
     category: "Agent / AI",
     type: "boolean",
     default: false
-  },
-  {
-    key: "telemetry.enabled",
-    title: "Telemetry",
-    description: "Enable anonymous usage metrics to help improve px0.",
-    category: "Security & Privacy",
-    type: "boolean",
-    default: true
   }
 ];
 
@@ -290,6 +291,7 @@ const COMMONLY_USED_KEYS = new Set([
   'workbench.colorTheme',
   'editor.wordWrap',
   'editor.lineNumbers',
+  'editor.vimMode',
   'editor.tabSize',
   'diffEditor.renderSideBySide',
   'editor.cursorStyle',
@@ -386,6 +388,10 @@ export function applySettingLive(key, val) {
     case 'markdown.preview.open': {
       S.mdPreview = val === true || val === 'true';
       try { localStorage.setItem('px0.mdPreview', S.mdPreview ? 'true' : 'false'); } catch {}
+      break;
+    }
+    case 'editor.vimMode': {
+      setVimModeEnabled(val === true || val === 'true', false);
       break;
     }
   }
@@ -643,6 +649,13 @@ function renderSettingsList() {
       ? `<button class="settings-reset-btn" data-reset="${esc(key)}" title="Reset to default (${esc(String(def))})">Reset</button>`
       : '';
 
+    const extraAction = (key === 'editor.vimMode') ? `
+      <div style="margin: 6px 0 2px;">
+        <button type="button" class="settings-btn-link btn-vim-cheatsheet-trigger" style="cursor:pointer;font-size:11.5px;display:inline-flex;align-items:center;gap:4px;color:var(--accent-fg);">
+          <span>View Vim Keybindings Cheat Sheet</span><kbd class="footer-kbd" style="font-size:10px;">?</kbd>
+        </button>
+      </div>` : '';
+
     return `
       <div class="settings-card${modClass}" data-setting="${esc(key)}">
         <div class="settings-card-left">
@@ -654,6 +667,7 @@ function renderSettingsList() {
           </div>
           <div class="settings-card-desc">${esc(desc)}</div>
           ${aptValuesHtml}
+          ${extraAction}
           <div class="settings-card-meta">
             <span class="settings-tag tag-current">Current: <b>${esc(String(val))}</b></span>
             <span class="settings-tag tag-default">Default: <code>${esc(String(def))}</code></span>
@@ -827,6 +841,12 @@ function initSettingsDOM() {
       if (resetBtn) {
         const key = resetBtn.dataset.reset;
         if (key) handleResetSetting(key);
+        return;
+      }
+      const vimHelpBtn = e.target.closest('.btn-vim-cheatsheet-trigger');
+      if (vimHelpBtn) {
+        showVimHelp();
+        return;
       }
     });
   }

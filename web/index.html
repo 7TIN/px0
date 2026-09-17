@@ -190,9 +190,11 @@
         <button class="footer-btn" data-action="goto" title="Go to Line ({Mod+G})"><span class="footer-btn-label">Go to</span><kbd class="footer-kbd" data-keys="Mod+G"></kbd></button>
         <button class="footer-btn" data-action="md-preview" title="Toggle Markdown Preview ({Alt+M})" hidden><span class="footer-btn-label">Preview</span><kbd class="footer-kbd" data-keys="Alt+M"></kbd></button>
         <button class="footer-btn" data-action="wrap" title="Toggle Word Wrap ({Alt+Z})"><span class="footer-btn-label">Wrap</span><kbd class="footer-kbd" data-keys="Alt+Z"></kbd></button>
+        <button class="footer-btn" id="btn-vim-help" data-action="vim-help" title="Vim Keybindings" hidden><span class="footer-btn-label">Vim Keys</span><kbd class="footer-kbd">?</kbd></button>
         <button class="footer-btn" data-action="help" title="Keyboard Shortcuts ({?})"><span class="footer-btn-label">Help</span><kbd class="footer-kbd" data-keys="?"></kbd></button>
       </div>
       <span class="status-sep"></span>
+      <span id="st-vim" class="status-vim-chip" hidden role="button" tabindex="0" title="Vim Mode (Click for shortcuts)">NORMAL</span>
       <span id="st-size"></span>
       <span id="st-pos"></span>
       <span class="grow"></span>
@@ -286,6 +288,7 @@
 
 <!-- SECTION: Keyboard Shortcuts Cheat Sheet Overlay (?) -->
 <div id="helpsheet" hidden></div>
+<div id="vim-helpsheet" hidden></div>
 
 <!-- SECTION: Settings Modal (Cmd+, / Ctrl+,) -->
 <div id="settings-modal" class="modal-overlay" hidden>

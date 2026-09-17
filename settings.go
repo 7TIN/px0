@@ -22,6 +22,7 @@ type settings struct {
 	EditorTabSize              *int     `json:"editor.tabSize,omitempty"`
 	EditorWordWrap             *string  `json:"editor.wordWrap,omitempty"`
 	EditorLineNumbers          *string  `json:"editor.lineNumbers,omitempty"`
+	EditorVimMode              *bool    `json:"editor.vimMode,omitempty"`
 	EditorRenderWhitespace     *string  `json:"editor.renderWhitespace,omitempty"`
 	EditorMinimapEnabled       *bool    `json:"editor.minimap.enabled,omitempty"`
 	WorkbenchColorTheme        *string  `json:"workbench.colorTheme,omitempty"`
@@ -117,6 +118,14 @@ var settingsSchema = []settingSchemaItem{
 		Type:        "select",
 		Default:     "on",
 		Options:     []string{"on", "off"},
+	},
+	{
+		Key:         "editor.vimMode",
+		Title:       "Vim Keybindings",
+		Description: "Enable Vim modal navigation (Normal mode, Visual mode, motions, search, and LSP shortcuts).",
+		Category:    "Text Editor",
+		Type:        "boolean",
+		Default:     false,
 	},
 	{
 		Key:         "editor.renderWhitespace",
@@ -318,14 +327,6 @@ var settingsSchema = []settingSchemaItem{
 		Category:    "Agent / AI",
 		Type:        "boolean",
 		Default:     false,
-	},
-	{
-		Key:         "telemetry.enabled",
-		Title:       "Telemetry",
-		Description: "Enable anonymous usage metrics to help improve px0.",
-		Category:    "Security & Privacy",
-		Type:        "boolean",
-		Default:     true,
 	},
 }
 
