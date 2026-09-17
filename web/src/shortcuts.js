@@ -19,6 +19,7 @@ import { previewing, togglePreview, previewKey, selectPreview } from './markdown
 import { toggleDiff } from './diff.js';
 import { openSettings, closeSettings, isSettingsOpen } from './settings.js';
 import { handleVimKeyDown, showVimHelp, closeVimHelp } from './vim.js';
+import { handleImageKey } from './imageview.js';
 
 /* Each entry lists alternative combos, written as for keyLabel in state.js so
    they show as ⌘/⌥/⇧ on a Mac and Ctrl/Alt/Shift elsewhere. Browsers keep
@@ -94,6 +95,8 @@ export function initShortcuts() {
     const mod = e[MOD];
 
     if (e.key === 'Escape') {
+      const lb = $('#img-lightbox');
+      if (lb && !lb.hidden) { lb.hidden = true; return; }
       if (!$('#vim-helpsheet')?.hidden) { closeVimHelp(); return; }
       if (isSettingsOpen()) { closeSettings(); return; }
       if (!overlay.hidden) { closePalette(); return; }
@@ -184,6 +187,7 @@ export function initShortcuts() {
     if (e.key === '?') { e.preventDefault(); showHelp(); return; }
     const d = doc_();
     if (!d) return;
+    if (d.isImage) { if (handleImageKey(e)) e.preventDefault(); return; }
     if (previewing(d)) { if (previewKey(e)) e.preventDefault(); return; }
     const toTop = () => { vp.scrollTop = 0; d.cur = 1; render(); updateStatus(); };
     const toBottom = () => { vp.scrollTop = sizer.offsetHeight; d.cur = d.total; render(); updateStatus(); };

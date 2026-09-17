@@ -7,6 +7,14 @@ export function updateStatus() {
   const sizeEl = $('#st-size');
   if (sizeEl) sizeEl.textContent = d ? fmtBytes(d.size) : '';
 
+  if (d && d.isImage) {
+    const posEl = $('#st-pos');
+    if (posEl) {
+      const zoomText = d.imageFit ? `Fit (${Math.round((d.imageScale || 1) * 100)}%)` : `${Math.round((d.imageScale || 1) * 100)}%`;
+      posEl.textContent = d.imageMeta ? `${d.imageMeta.width} × ${d.imageMeta.height} px · ${zoomText}` : zoomText;
+    }
+  }
+
   const isMd = !!(d && d.markdown), shown = previewing(d);
   const mdBtn = $('[data-action="md-preview"]');
   if (mdBtn) {

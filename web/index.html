@@ -95,6 +95,33 @@
       <div id="mdview" hidden><article id="md" class="md"></article></div>
       <!-- Diff view: covers the code view while a diff layout is active (Mod+D toggles) -->
       <div id="diffview" hidden><div id="diffcontent"></div></div>
+      <!-- Image viewer: covers the code view for an image tab -->
+      <div id="imgview" hidden>
+        <div id="imgview-viewport">
+          <div id="imgview-canvas" class="bg-checker">
+            <img id="imgview-img" src="" alt="">
+          </div>
+        </div>
+        <div id="imgview-hud">
+          <div class="imgview-hud-group">
+            <button id="iv-zoom-out" class="iv-btn" title="Zoom out (-)" aria-label="Zoom out">−</button>
+            <button id="iv-zoom-label" class="iv-btn iv-btn-text" title="Reset zoom (0 to fit, 1 for 100%)">Fit</button>
+            <button id="iv-zoom-in" class="iv-btn" title="Zoom in (+)" aria-label="Zoom in">+</button>
+          </div>
+          <span class="iv-sep"></span>
+          <div class="imgview-hud-group">
+            <button id="iv-fit" class="iv-btn" title="Fit to window (0)">Fit</button>
+            <button id="iv-100" class="iv-btn" title="Actual size 1:1 (1)">1:1</button>
+          </div>
+          <span class="iv-sep"></span>
+          <div class="imgview-hud-group">
+            <button id="iv-bg" class="iv-btn" title="Toggle background (b)">Checker</button>
+            <button id="iv-pixel" class="iv-btn" title="Toggle smooth / pixelated (p)">Smooth</button>
+          </div>
+          <span class="iv-sep"></span>
+          <span id="iv-meta" class="iv-meta"></span>
+        </div>
+      </div>
       <div id="minimap-hits"></div>
 
       <!-- Welcome / Empty State Screen -->
@@ -331,6 +358,27 @@
       </div>
       <div id="settings-raw-error" class="settings-error-banner" hidden></div>
       <textarea id="settings-raw-editor" spellcheck="false" autocomplete="off" wrap="off"></textarea>
+    </div>
+  </div>
+</div>
+
+<!-- Markdown Image Lightbox Overlay -->
+<div id="img-lightbox" hidden>
+  <div class="lightbox-backdrop"></div>
+  <div class="lightbox-dialog">
+    <header class="lightbox-header">
+      <span class="lightbox-title" id="lb-title"></span>
+      <span class="lightbox-meta" id="lb-meta"></span>
+      <div class="lightbox-actions">
+        <button id="lb-open-tab" class="lightbox-btn" title="Open image in dedicated tab">Open in Tab</button>
+        <button id="lb-copy-path" class="lightbox-btn" title="Copy image path">Copy Path</button>
+        <button id="lb-close" class="lightbox-btn lightbox-close" title="Close (Esc)">&#10005;</button>
+      </div>
+    </header>
+    <div class="lightbox-body">
+      <div class="lightbox-canvas bg-checker" id="lb-canvas">
+        <img id="lb-img" src="" alt="">
+      </div>
     </div>
   </div>
 </div>

@@ -21,6 +21,7 @@ import { initAgent, applyAgentMeta, loadAgentAsync } from './agent.js';
 import { initMetrics, initStatusFit, updateMetricsDisplay, updateStatus } from './status.js';
 import { initSettings } from './settings.js';
 import { initVim } from './vim.js';
+import { initImageViewer } from './imageview.js';
 
 // Initialize all subsystems
 initRenderer();
@@ -44,6 +45,7 @@ initMetrics();
 initStatusFit();
 initSettings();
 initVim();
+initImageViewer();
 
 // Bootstrap application lifecycle
 (async function boot() {

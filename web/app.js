@@ -2,7 +2,7 @@
   // web/src/state.js
   var $ = (s, r = document) => r.querySelector(s);
   var $$ = (s, r = document) => [...r.querySelectorAll(s)];
-  var esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  var esc2 = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   var request = async (method, path, params, opts = {}) => {
     const u = new URL(path, location.origin);
     for (const [k, v] of Object.entries(params || {}))
@@ -38,7 +38,7 @@
     const key = parts.pop() || "";
     return parts.join("") + (parts.length && /^[a-z]{2,}$/i.test(key) ? " " : "") + key;
   };
-  var keyCaps = (combo) => keyParts(combo).map((k) => "<kbd>" + esc(k) + "</kbd>").join("");
+  var keyCaps = (combo) => keyParts(combo).map((k) => "<kbd>" + esc2(k) + "</kbd>").join("");
   var withKeys = (text) => text.replace(/\{([^}]+)\}/g, (_, combo) => keyLabel(combo));
   function applyKeyLabels(root = document) {
     for (const el of $$("[data-keys]", root))
@@ -97,10 +97,10 @@
       } else if (accentText === "!") {
         iconHtml = '<span class="toast-icon toast-icon-warn"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="8" y1="4" x2="8" y2="9"/><circle cx="8" cy="12.5" r="0.6" fill="currentColor"/></svg></span>';
       } else {
-        iconHtml = '<span class="toast-chip">' + esc(accentText) + "</span>";
+        iconHtml = '<span class="toast-chip">' + esc2(accentText) + "</span>";
       }
     }
-    toastEl.innerHTML = iconHtml + '<span class="toast-msg">' + esc(text) + "</span>";
+    toastEl.innerHTML = iconHtml + '<span class="toast-msg">' + esc2(text) + "</span>";
     toastEl.hidden = false;
     toastTimer = setTimeout(() => {
       toastEl.classList.add("toast-hide");
@@ -575,7 +575,7 @@
       if (!items.length)
         return '<div class="hint">No symbols found.</div>';
       const base = Math.min(...items.map((s) => s.indent));
-      return (d.outlineSource ? '<div class="hint"><span class="src">' + esc(d.outlineSource) + "</span> · " + items.length + " symbols</div>" : "") + items.map((s) => '<div class="sym" data-n="' + s.line + '" style="padding-left:' + (10 + Math.min(s.indent - base, 16) * 5) + 'px" title="Jump to ' + esc(s.name) + " at line " + s.line + '">' + '<span class="kd" data-k="' + esc(s.kind) + '">' + esc(kindLabel(s.kind)) + "</span>" + '<span class="sn">' + esc(s.name) + '</span><span class="sl">' + s.line + "</span></div>").join("");
+      return (d.outlineSource ? '<div class="hint"><span class="src">' + esc2(d.outlineSource) + "</span> · " + items.length + " symbols</div>" : "") + items.map((s) => '<div class="sym" data-n="' + s.line + '" style="padding-left:' + (10 + Math.min(s.indent - base, 16) * 5) + 'px" title="Jump to ' + esc2(s.name) + " at line " + s.line + '">' + '<span class="kd" data-k="' + esc2(s.kind) + '">' + esc2(kindLabel(s.kind)) + "</span>" + '<span class="sn">' + esc2(s.name) + '</span><span class="sl">' + s.line + "</span></div>").join("");
     };
     if (el)
       el.innerHTML = renderSymHtml(syms);
@@ -662,12 +662,12 @@
       const note = c.ignored ? " (ignored by .gitignore, not searched)" : "";
       if (c.dir) {
         const dc = c.dirty ? " dirty" : "";
-        return '<div class="tw"><div class="tr dir' + ig + dc + '" data-dir="' + esc(c.path) + '" style="padding-left:' + pad + 'px" title="Folder: ' + esc(c.path) + note + '">' + '<span class="ar"></span><span class="nm">' + esc(c.name) + "</span></div>" + '<div class="kids" data-kids="' + esc(c.path) + '"></div></div>';
+        return '<div class="tw"><div class="tr dir' + ig + dc + '" data-dir="' + esc2(c.path) + '" style="padding-left:' + pad + 'px" title="Folder: ' + esc2(c.path) + note + '">' + '<span class="ar"></span><span class="nm">' + esc2(c.name) + "</span></div>" + '<div class="kids" data-kids="' + esc2(c.path) + '"></div></div>';
       }
       const g = GIT_STATUS[c.status];
       const gc = g ? " dirty " + g[0] : "";
-      const badge = g ? '<span class="gs" title="git: ' + g[1] + '">' + esc(c.status) + "</span>" : "";
-      return '<div class="tr file' + ig + gc + '" data-file="' + esc(c.path) + '" style="padding-left:' + (pad + 12) + 'px" title="Open ' + esc(c.path) + note + '">' + '<span class="ic" data-t="' + fileKind(c.name) + '"></span><span class="nm">' + esc(c.name) + "</span>" + badge + "</div>";
+      const badge = g ? '<span class="gs" title="git: ' + g[1] + '">' + esc2(c.status) + "</span>" : "";
+      return '<div class="tr file' + ig + gc + '" data-file="' + esc2(c.path) + '" style="padding-left:' + (pad + 12) + 'px" title="Open ' + esc2(c.path) + note + '">' + '<span class="ic" data-t="' + fileKind(c.name) + '"></span><span class="nm">' + esc2(c.name) + "</span>" + badge + "</div>";
     }).join("");
   }
   var FILE_KIND = {
@@ -1024,7 +1024,7 @@
         return;
       if (searchAbort === controller) {
         searchAbort = null;
-        resultsEl.innerHTML = '<div class="hint">' + esc(e.message) + "</div>";
+        resultsEl.innerHTML = '<div class="hint">' + esc2(e.message) + "</div>";
       }
     }
   }, 160);
@@ -1037,11 +1037,11 @@
       return;
     }
     const head = j.header || j.total.toLocaleString() + " result" + (j.total === 1 ? "" : "s") + " in " + j.files.toLocaleString() + " file" + (j.files === 1 ? "" : "s") + (j.truncated ? " (truncated)" : "");
-    let html = '<div class="hint">' + esc(head) + "</div>";
+    let html = '<div class="hint">' + esc2(head) + "</div>";
     for (const f of j.results) {
-      html += '<div class="rfile" data-toggle="' + esc(f.path) + '" title="' + esc(f.path) + '">' + '<span class="ar">&#9660;</span>' + (f.ext ? '<span class="ext">ext</span>' : "") + '<span class="fp">' + esc(displayPath(f.path)) + "</span>" + '<span class="cnt">' + f.matches.length + "</span></div>" + '<div data-group="' + esc(f.path) + '">';
+      html += '<div class="rfile" data-toggle="' + esc2(f.path) + '" title="' + esc2(f.path) + '">' + '<span class="ar">&#9660;</span>' + (f.ext ? '<span class="ext">ext</span>' : "") + '<span class="fp">' + esc2(displayPath(f.path)) + "</span>" + '<span class="cnt">' + f.matches.length + "</span></div>" + '<div data-group="' + esc2(f.path) + '">';
       for (const m of f.matches) {
-        html += '<div class="rline" data-p="' + esc(f.path) + '" data-n="' + m.line + '" title="Jump to ' + esc(f.path) + ":" + m.line + '">' + '<span class="rn">' + m.line + '</span><span class="rt">' + esc(m.pre) + "<mark>" + esc(m.mid) + "</mark>" + esc(m.post) + "</span></div>";
+        html += '<div class="rline" data-p="' + esc2(f.path) + '" data-n="' + m.line + '" title="Jump to ' + esc2(f.path) + ":" + m.line + '">' + '<span class="rn">' + m.line + '</span><span class="rt">' + esc2(m.pre) + "<mark>" + esc2(m.mid) + "</mark>" + esc2(m.post) + "</span></div>";
       }
       html += "</div>";
     }
@@ -1128,16 +1128,16 @@
     targetEl.textContent = word;
     badgeEl.textContent = hits.length;
     if (!hits.length) {
-      listEl.innerHTML = '<div class="hint">No references found for "<b>' + esc(word) + '</b>".</div>';
+      listEl.innerHTML = '<div class="hint">No references found for "<b>' + esc2(word) + '</b>".</div>';
       return;
     }
     const grouped = groupHits(hits);
-    const head = hits.length + " reference" + (hits.length === 1 ? "" : "s") + (server ? " · " + esc(server) : " · text search");
+    const head = hits.length + " reference" + (hits.length === 1 ? "" : "s") + (server ? " · " + esc2(server) : " · text search");
     let html = '<div class="hint">' + head + "</div>";
     for (const f of grouped) {
-      html += '<div class="rfile" data-toggle="r-' + esc(f.path) + '" title="' + esc(f.path) + '">' + '<span class="ar">&#9660;</span>' + '<span class="fp">' + esc(displayPath(f.path)) + "</span>" + '<span class="cnt">' + f.matches.length + "</span></div>" + '<div data-group="r-' + esc(f.path) + '">';
+      html += '<div class="rfile" data-toggle="r-' + esc2(f.path) + '" title="' + esc2(f.path) + '">' + '<span class="ar">&#9660;</span>' + '<span class="fp">' + esc2(displayPath(f.path)) + "</span>" + '<span class="cnt">' + f.matches.length + "</span></div>" + '<div data-group="r-' + esc2(f.path) + '">';
       for (const m of f.matches) {
-        html += '<div class="rline" data-p="' + esc(f.path) + '" data-n="' + m.line + '" title="Jump to ' + esc(f.path) + ":" + m.line + '">' + '<span class="rn">' + m.line + '</span><span class="rt">' + esc(m.pre) + "<mark>" + esc(m.mid || word) + "</mark>" + esc(m.post) + "</span></div>";
+        html += '<div class="rline" data-p="' + esc2(f.path) + '" data-n="' + m.line + '" title="Jump to ' + esc2(f.path) + ":" + m.line + '">' + '<span class="rn">' + m.line + '</span><span class="rt">' + esc2(m.pre) + "<mark>" + esc2(m.mid || word) + "</mark>" + esc2(m.post) + "</span></div>";
       }
       html += "</div>";
     }
@@ -1157,7 +1157,7 @@
     if (badgeEl)
       badgeEl.textContent = "…";
     if (listEl)
-      listEl.innerHTML = '<div class="hint">Finding references for "' + esc(at.word) + '"…</div>';
+      listEl.innerHTML = '<div class="hint">Finding references for "' + esc2(at.word) + '"…</div>';
     if (canAskServer(at)) {
       setStatusNote("references to " + at.word + "…", 8000);
       try {
@@ -1190,7 +1190,7 @@
       updateStatus();
       setStatusNote("");
       if (listEl)
-        listEl.innerHTML = '<div class="hint">Search error: ' + esc(err.message) + "</div>";
+        listEl.innerHTML = '<div class="hint">Search error: ' + esc2(err.message) + "</div>";
     }
   }
   function initInspector() {
@@ -1702,7 +1702,7 @@
       s = await api("/api/lsp/setup", { path: d.path });
     } catch (e) {
       if (my === setupSeq)
-        el.innerHTML = hintHtml("Could not check language servers: " + esc(e.message));
+        el.innerHTML = hintHtml("Could not check language servers: " + esc2(e.message));
       return;
     }
     if (my !== setupSeq || doc_() !== d)
@@ -1734,7 +1734,7 @@
     try {
       j = await apiPost("/api/lsp/start", { path: d.path });
     } catch (e) {
-      el.innerHTML = hintHtml("Could not start the language server: " + esc(e.message));
+      el.innerHTML = hintHtml("Could not start the language server: " + esc2(e.message));
       return;
     }
     if (doc_() !== d)
@@ -1760,36 +1760,36 @@
       return hintHtml("Language servers are turned off: px0 was started with <b>-no-lsp</b>. " + "Restart it without that flag for call trails, hover and precise references.");
     }
     if (!s.servers.length) {
-      return hintHtml("px0 knows no language server for <b>" + esc(ext) + "</b> files, so call trails are not available here.");
+      return hintHtml("px0 knows no language server for <b>" + esc2(ext) + "</b> files, so call trails are not available here.");
     }
     const offer = s.servers.filter((v) => v.options.length || v.job);
     const running = s.servers.some((v) => v.job && v.job.running);
     let html = '<div class="lsp-setup">';
     if (s.state === "failed") {
-      html += "<p><b>" + esc(s.server) + '</b> did not start: <span class="lsp-reason">' + esc(s.reason || "unknown error") + "</span></p>" + '<div class="lsp-row"><button class="lsp-btn" data-start>Retry</button></div>';
+      html += "<p><b>" + esc2(s.server) + '</b> did not start: <span class="lsp-reason">' + esc2(s.reason || "unknown error") + "</span></p>" + '<div class="lsp-row"><button class="lsp-btn" data-start>Retry</button></div>';
       if (offer.length)
         html += "<p>If it is broken or incomplete, install it again:</p>";
     } else {
-      html += "<p>Call trails, hover and precise references for " + esc(s.lang) + " need a language server, and none is installed.</p>";
+      html += "<p>Call trails, hover and precise references for " + esc2(s.lang) + " need a language server, and none is installed.</p>";
     }
     for (const v of offer) {
-      html += '<div class="lsp-server"><div class="lsp-name">' + esc(v.name) + "</div>";
+      html += '<div class="lsp-server"><div class="lsp-name">' + esc2(v.name) + "</div>";
       v.options.forEach((o, i) => {
-        html += '<div class="lsp-opt"><code>' + esc(o.cmd) + '</code><span class="lsp-acts">';
+        html += '<div class="lsp-opt"><code>' + esc2(o.cmd) + '</code><span class="lsp-acts">';
         if (!o.auto)
           html += '<span class="lsp-need">run in a terminal</span>';
         else if (!o.hasTool)
-          html += '<span class="lsp-need">needs ' + esc(o.tool) + "</span>";
+          html += '<span class="lsp-need">needs ' + esc2(o.tool) + "</span>";
         else
-          html += '<button class="lsp-btn primary" data-install="' + esc(v.name) + '" data-option="' + i + '"' + (running ? " disabled" : "") + ">Install</button>";
-        html += '<button class="lsp-btn" data-copy="' + esc(o.cmd) + '">Copy</button></span></div>';
+          html += '<button class="lsp-btn primary" data-install="' + esc2(v.name) + '" data-option="' + i + '"' + (running ? " disabled" : "") + ">Install</button>";
+        html += '<button class="lsp-btn" data-copy="' + esc2(o.cmd) + '">Copy</button></span></div>';
       });
       if (v.job)
         html += job(v.job);
       html += "</div>";
     }
     if (!offer.length) {
-      html += "<p>px0 has no installer for this one. Install " + s.servers.map((v) => "<b>" + esc(v.name) + "</b>").join(" or ") + " and make sure it is on PATH.</p>";
+      html += "<p>px0 has no installer for this one. Install " + s.servers.map((v) => "<b>" + esc2(v.name) + "</b>").join(" or ") + " and make sure it is on PATH.</p>";
     }
     html += '<div class="lsp-row"><span>Installed one yourself?</span><button class="lsp-btn" data-start>Detect and start</button></div></div>';
     return html;
@@ -1798,11 +1798,11 @@
     const tail = (j.log || "").trimEnd().split(`
 `).slice(-12).join(`
 `);
-    const log = tail ? "<pre>" + esc(tail) + "</pre>" : "";
+    const log = tail ? "<pre>" + esc2(tail) + "</pre>" : "";
     if (j.running)
-      return '<div class="lsp-job">Installing with <code>' + esc(j.cmd) + "</code>…" + log + "</div>";
+      return '<div class="lsp-job">Installing with <code>' + esc2(j.cmd) + "</code>…" + log + "</div>";
     if (j.error)
-      return '<div class="lsp-job err">Install failed: ' + esc(j.error) + log + "</div>";
+      return '<div class="lsp-job err">Install failed: ' + esc2(j.error) + log + "</div>";
     return "";
   }
   function wire(el, d, onReady) {
@@ -1866,13 +1866,13 @@
       return;
     }
     if (!at || at.imprecise) {
-      hint("Click a function name in the editor, then press <b>" + esc(keyLabel("Alt+Shift+H")) + "</b>.");
+      hint("Click a function name in the editor, then press <b>" + esc2(keyLabel("Alt+Shift+H")) + "</b>.");
       return;
     }
     const my = ++callSeq;
     T = null;
     $("#right-calls-target").textContent = at.word;
-    hint('Tracing calls for "' + esc(at.word) + '"…');
+    hint('Tracing calls for "' + esc2(at.word) + '"…');
     setStatusNote("call trail for " + at.word + "…", 8000);
     let j;
     try {
@@ -1881,7 +1881,7 @@
       if (my === callSeq) {
         updateStatus();
         setStatusNote("");
-        hint('Could not trace "' + esc(at.word) + '": ' + esc(explain(e.message)));
+        hint('Could not trace "' + esc2(at.word) + '": ' + esc2(explain(e.message)));
       }
       return;
     }
@@ -1891,7 +1891,7 @@
     updateStatus();
     setStatusNote("");
     if (!j.nodes || !j.nodes.length) {
-      hint('"' + esc(at.word) + '" is not a function ' + esc(j.server || "the language server") + " can trace.");
+      hint('"' + esc2(at.word) + '" is not a function ' + esc2(j.server || "the language server") + " can trace.");
       return;
     }
     T = { path: d.path, word: at.word, dir: dirPref, roots: j.nodes.map((n) => wrap(n, null)) };
@@ -1949,10 +1949,10 @@
       const tip = t.path + ":" + t.line + (node.cycle ? `
 (recursive, already in this trail)` : "") + (n.detail ? `
 ` + n.detail : "");
-      html += '<div class="sym cnode" data-i="' + i + '" style="padding-left:' + (6 + depth * 14) + 'px" title="' + esc(tip) + '">' + '<span class="car' + (node.cycle ? " cyc" : "") + '">' + arrow + "</span>" + '<span class="kd" data-k="' + esc(n.kind) + '">' + esc(n.kind) + "</span>" + '<span class="sn">' + esc(n.name) + "</span>" + '<span class="sl">' + esc(base(t.path)) + ":" + t.line + calls + "</span></div>";
+      html += '<div class="sym cnode" data-i="' + i + '" style="padding-left:' + (6 + depth * 14) + 'px" title="' + esc2(tip) + '">' + '<span class="car' + (node.cycle ? " cyc" : "") + '">' + arrow + "</span>" + '<span class="kd" data-k="' + esc2(n.kind) + '">' + esc2(n.kind) + "</span>" + '<span class="sn">' + esc2(n.name) + "</span>" + '<span class="sl">' + esc2(base(t.path)) + ":" + t.line + calls + "</span></div>";
       const pad = 'style="padding-left:' + (26 + (depth + 1) * 14) + 'px"';
       if (node.err)
-        html += '<div class="cnone" ' + pad + ">" + esc(node.err) + "</div>";
+        html += '<div class="cnone" ' + pad + ">" + esc2(node.err) + "</div>";
       else if (node.open && node.kids && !node.kids.length)
         html += '<div class="cnone" ' + pad + ">" + none + "</div>";
       if (node.open && node.kids)
@@ -2076,7 +2076,7 @@
     S2.hover = at;
     S2.hoverAnchor = { x, y };
     const refPath = d.path + ":" + at.line;
-    hovercard.innerHTML = (j.signature ? '<div class="sig">' + j.signature + "</div>" : "") + (j.doc ? '<div class="doc">' + esc(j.doc) + "</div>" : "") + '<div class="actions">' + '<button id="hc-copy-ref" title="Copy file and line reference">Copy Ref</button>' + '<button id="hc-copy-ai" title="Copy snippet with file path and line numbers">Copy with Context</button>' + '<button id="hc-find-refs" title="Find all usages across codebase">Usages</button>' + '<button id="hc-calls" title="' + withKeys("Trace callers and callees ({Alt+Shift+H})") + '">Calls</button>' + "</div>" + '<div class="foot"><b>' + esc(j.server || "lsp") + "</b>" + "<span>" + withKeys("{Mod+Click} definition") + "</span>" + "<span>" + withKeys("{Shift+F12} references") + "</span></div>";
+    hovercard.innerHTML = (j.signature ? '<div class="sig">' + j.signature + "</div>" : "") + (j.doc ? '<div class="doc">' + esc2(j.doc) + "</div>" : "") + '<div class="actions">' + '<button id="hc-copy-ref" title="Copy file and line reference">Copy Ref</button>' + '<button id="hc-copy-ai" title="Copy snippet with file path and line numbers">Copy with Context</button>' + '<button id="hc-find-refs" title="Find all usages across codebase">Usages</button>' + '<button id="hc-calls" title="' + withKeys("Trace callers and callees ({Alt+Shift+H})") + '">Calls</button>' + "</div>" + '<div class="foot"><b>' + esc2(j.server || "lsp") + "</b>" + "<span>" + withKeys("{Mod+Click} definition") + "</span>" + "<span>" + withKeys("{Shift+F12} references") + "</span></div>";
     const btnRef = hovercard.querySelector("#hc-copy-ref");
     const btnAi = hovercard.querySelector("#hc-copy-ai");
     const btnRefs = hovercard.querySelector("#hc-find-refs");
@@ -2339,16 +2339,25 @@
     return { path: path.slice(1), hash: u.hash.slice(1) };
   }
   function mdSetImage(img, src, base2) {
+    img.setAttribute("loading", "lazy");
+    img.setAttribute("decoding", "async");
+    img.classList.add("md-zoomable");
     const m = MD_SCHEME.exec(src);
     if (m) {
-      if (/^https?$/i.test(m[1]) || /^data:image\//i.test(src))
+      if (/^https?$/i.test(m[1]) || /^data:image\//i.test(src)) {
         img.setAttribute("src", src);
+        img.dataset.origSrc = src;
+      }
     } else if (src.startsWith("//")) {
       img.setAttribute("src", src);
+      img.dataset.origSrc = src;
     } else if (src) {
       const t = mdLocal(src, base2);
-      if (t)
+      if (t) {
         img.setAttribute("src", "/api/raw?path=" + encodeURIComponent(t.path));
+        img.dataset.rawPath = t.path;
+        img.dataset.origSrc = src;
+      }
     }
   }
   function mdSetLink(a, href, base2) {
@@ -2599,7 +2608,13 @@
         copyToClipboard($("pre", copy.parentElement).textContent, "Copied code block");
         return;
       }
+      const img = e.target.closest("img.md-zoomable");
       const a = e.target.closest("a");
+      if (img && !a && e.button === 0 && !e[MOD] && !e.shiftKey) {
+        e.preventDefault();
+        openLightbox(img);
+        return;
+      }
       if (!a || e.button !== 0 || e[MOD] || e.shiftKey)
         return;
       if ("path" in a.dataset) {
@@ -2610,6 +2625,69 @@
         mdJump(a.dataset.anchor);
       }
     });
+    mdArticle.addEventListener("error", (e) => {
+      if (e.target && e.target.localName === "img") {
+        const img = e.target;
+        const path = img.dataset.rawPath || img.dataset.origSrc || img.getAttribute("src") || "image";
+        const fallback = document.createElement("div");
+        fallback.className = "md-img-broken";
+        fallback.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 14l5-5 3 3 4-4"/><circle cx="5.5" cy="5.5" r="1.5"/><line x1="2" y1="2" x2="14" y2="14"/></svg><span>Image not found: ' + esc(path) + "</span>";
+        img.replaceWith(fallback);
+      }
+    }, true);
+    const lb = $("#img-lightbox");
+    if (lb) {
+      lb.addEventListener("click", (e) => {
+        if (e.target.closest(".lightbox-close") || e.target.classList.contains("lightbox-backdrop")) {
+          lb.hidden = true;
+        }
+      });
+    }
+  }
+  function openLightbox(img) {
+    const lb = $("#img-lightbox");
+    if (!lb)
+      return;
+    const lbImg = $("#lb-img");
+    const lbTitle = $("#lb-title");
+    const lbMeta = $("#lb-meta");
+    const lbOpenTab = $("#lb-open-tab");
+    const lbCopyPath = $("#lb-copy-path");
+    const src = img.getAttribute("src");
+    const rawPath = img.dataset.rawPath || "";
+    const alt = img.getAttribute("alt") || "";
+    const displayTitle = rawPath || alt || src.split("/").pop() || "Image Preview";
+    lbImg.src = src;
+    lbTitle.textContent = displayTitle;
+    lbTitle.title = displayTitle;
+    const updateMeta = () => {
+      if (lbImg.naturalWidth) {
+        lbMeta.textContent = `${lbImg.naturalWidth} × ${lbImg.naturalHeight} px`;
+      } else {
+        lbMeta.textContent = "";
+      }
+    };
+    if (lbImg.complete && lbImg.naturalWidth)
+      updateMeta();
+    else
+      lbImg.onload = updateMeta;
+    if (rawPath) {
+      lbOpenTab.hidden = false;
+      lbOpenTab.onclick = () => {
+        lb.hidden = true;
+        openFile(rawPath);
+      };
+      lbCopyPath.hidden = false;
+      lbCopyPath.onclick = () => {
+        copyToClipboard(rawPath, "Copied image path");
+      };
+    } else {
+      lbOpenTab.hidden = true;
+      lbCopyPath.onclick = () => {
+        copyToClipboard(src, "Copied image URL");
+      };
+    }
+    lb.hidden = false;
   }
 
   // web/src/diff.js
@@ -2843,7 +2921,7 @@
   function codeCell(text) {
     const el = document.createElement("div");
     el.className = "diff-code";
-    el.innerHTML = esc(text || "") || "&nbsp;";
+    el.innerHTML = esc2(text || "") || "&nbsp;";
     return el;
   }
   function initDiff() {
@@ -2881,6 +2959,13 @@
     const sizeEl = $("#st-size");
     if (sizeEl)
       sizeEl.textContent = d ? fmtBytes(d.size) : "";
+    if (d && d.isImage) {
+      const posEl = $("#st-pos");
+      if (posEl) {
+        const zoomText = d.imageFit ? `Fit (${Math.round((d.imageScale || 1) * 100)}%)` : `${Math.round((d.imageScale || 1) * 100)}%`;
+        posEl.textContent = d.imageMeta ? `${d.imageMeta.width} × ${d.imageMeta.height} px · ${zoomText}` : zoomText;
+      }
+    }
     const isMd = !!(d && d.markdown), shown2 = previewing(d);
     const mdBtn = $('[data-action="md-preview"]');
     if (mdBtn) {
@@ -3356,6 +3441,307 @@
     document.addEventListener("scroll", closeSelMenu, true);
   }
 
+  // web/src/imageview.js
+  var ivInit = false;
+  var isPanning = false;
+  var panStart = { x: 0, y: 0 };
+  var panOrigin = { x: 0, y: 0 };
+  function isImageViewing(d = doc_()) {
+    return !!(d && d.isImage);
+  }
+  function syncImageView() {
+    const d = doc_();
+    const imgView = $("#imgview");
+    if (!imgView)
+      return;
+    if (isImageViewing(d)) {
+      $("#empty").hidden = true;
+      imgView.hidden = false;
+      renderImageView(d);
+    } else {
+      imgView.hidden = true;
+    }
+  }
+  function renderImageView(d) {
+    if (!ivInit)
+      initImageViewer();
+    const img = $("#imgview-img");
+    const canvas = $("#imgview-canvas");
+    if (!img || !canvas)
+      return;
+    const rawUrl = "/api/raw?path=" + encodeURIComponent(d.path);
+    if (img.dataset.curPath !== d.path) {
+      img.dataset.curPath = d.path;
+      img.src = rawUrl;
+    }
+    if (d.imageFit === undefined)
+      d.imageFit = true;
+    if (d.imageScale === undefined)
+      d.imageScale = 1;
+    if (d.imagePanX === undefined)
+      d.imagePanX = 0;
+    if (d.imagePanY === undefined)
+      d.imagePanY = 0;
+    if (d.imageBg === undefined)
+      d.imageBg = "checker";
+    if (d.imagePixelated === undefined) {
+      d.imagePixelated = d.imageMeta ? d.imageMeta.width <= 64 && d.imageMeta.height <= 64 : false;
+    }
+    const onLoaded = () => {
+      d.imageMeta = {
+        width: img.naturalWidth,
+        height: img.naturalHeight
+      };
+      if (d.imagePixelated === undefined) {
+        d.imagePixelated = d.imageMeta.width <= 64 && d.imageMeta.height <= 64;
+      }
+      applyImageTransform(d);
+    };
+    if (img.complete && img.naturalWidth > 0) {
+      onLoaded();
+    } else {
+      img.onload = onLoaded;
+    }
+    applyImageTransform(d);
+  }
+  function applyImageTransform(d = doc_()) {
+    if (!d || !d.isImage)
+      return;
+    const canvas = $("#imgview-canvas");
+    const img = $("#imgview-img");
+    const vp2 = $("#imgview-viewport");
+    if (!canvas || !img || !vp2)
+      return;
+    const natW = d.imageMeta?.width || img.naturalWidth || 100;
+    const natH = d.imageMeta?.height || img.naturalHeight || 100;
+    let currentScale = d.imageScale || 1;
+    if (d.imageFit) {
+      const vpW = Math.max(100, vp2.clientWidth - 64);
+      const vpH = Math.max(100, vp2.clientHeight - 64);
+      const fitScale = Math.min(vpW / natW, vpH / natH);
+      currentScale = natW <= vpW && natH <= vpH ? 1 : fitScale;
+      d.imageScale = currentScale;
+      d.imagePanX = 0;
+      d.imagePanY = 0;
+    }
+    canvas.style.transform = `translate(${d.imagePanX || 0}px, ${d.imagePanY || 0}px) scale(${currentScale})`;
+    canvas.className = "bg-" + (d.imageBg || "checker");
+    img.classList.toggle("render-pixelated", !!d.imagePixelated);
+    img.classList.toggle("render-smooth", !d.imagePixelated);
+    const zoomLabel = $("#iv-zoom-label");
+    if (zoomLabel) {
+      zoomLabel.textContent = d.imageFit ? `Fit (${Math.round(currentScale * 100)}%)` : `${Math.round(currentScale * 100)}%`;
+    }
+    const bgBtn = $("#iv-bg");
+    if (bgBtn) {
+      bgBtn.textContent = d.imageBg === "dark" ? "Dark" : d.imageBg === "light" ? "Light" : "Checker";
+    }
+    const pixelBtn = $("#iv-pixel");
+    if (pixelBtn) {
+      pixelBtn.textContent = d.imagePixelated ? "Pixelated" : "Smooth";
+      pixelBtn.classList.toggle("active", !!d.imagePixelated);
+    }
+    const metaEl = $("#iv-meta");
+    if (metaEl) {
+      metaEl.textContent = `${natW} × ${natH} px · ${fmtBytes(d.size || 0)}`;
+    }
+    updateStatus();
+  }
+  function zoomImage(delta, factor = 1.25) {
+    const d = doc_();
+    if (!d || !d.isImage)
+      return;
+    d.imageFit = false;
+    if (delta > 0) {
+      d.imageScale = Math.min(32, (d.imageScale || 1) * factor);
+    } else {
+      d.imageScale = Math.max(0.05, (d.imageScale || 1) / factor);
+    }
+    applyImageTransform(d);
+  }
+  function fitImage() {
+    const d = doc_();
+    if (!d || !d.isImage)
+      return;
+    d.imageFit = true;
+    d.imagePanX = 0;
+    d.imagePanY = 0;
+    applyImageTransform(d);
+  }
+  function actualSizeImage() {
+    const d = doc_();
+    if (!d || !d.isImage)
+      return;
+    d.imageFit = false;
+    d.imageScale = 1;
+    d.imagePanX = 0;
+    d.imagePanY = 0;
+    applyImageTransform(d);
+  }
+  function cycleImageBg() {
+    const d = doc_();
+    if (!d || !d.isImage)
+      return;
+    const modes = ["checker", "dark", "light"];
+    const curIdx = modes.indexOf(d.imageBg || "checker");
+    d.imageBg = modes[(curIdx + 1) % modes.length];
+    applyImageTransform(d);
+  }
+  function toggleImagePixelated() {
+    const d = doc_();
+    if (!d || !d.isImage)
+      return;
+    d.imagePixelated = !d.imagePixelated;
+    applyImageTransform(d);
+  }
+  function panImage(dx, dy) {
+    const d = doc_();
+    if (!d || !d.isImage)
+      return;
+    d.imageFit = false;
+    d.imagePanX = (d.imagePanX || 0) + dx;
+    d.imagePanY = (d.imagePanY || 0) + dy;
+    applyImageTransform(d);
+  }
+  function handleImageKey(e) {
+    const d = doc_();
+    if (!d || !d.isImage)
+      return false;
+    if (e.key === "+" || e.key === "=") {
+      zoomImage(1);
+      return true;
+    }
+    if (e.key === "-" || e.key === "_") {
+      zoomImage(-1);
+      return true;
+    }
+    if (e.key === "0") {
+      fitImage();
+      return true;
+    }
+    if (e.key === "1") {
+      actualSizeImage();
+      return true;
+    }
+    if (e.key === "b" || e.key === "B") {
+      cycleImageBg();
+      return true;
+    }
+    if (e.key === "p" || e.key === "P") {
+      toggleImagePixelated();
+      return true;
+    }
+    if (e.key === "ArrowUp") {
+      panImage(0, 40);
+      return true;
+    }
+    if (e.key === "ArrowDown") {
+      panImage(0, -40);
+      return true;
+    }
+    if (e.key === "ArrowLeft") {
+      panImage(40, 0);
+      return true;
+    }
+    if (e.key === "ArrowRight") {
+      panImage(-40, 0);
+      return true;
+    }
+    return false;
+  }
+  function initImageViewer() {
+    if (ivInit)
+      return;
+    ivInit = true;
+    const vp2 = $("#imgview-viewport");
+    const hud = $("#imgview-hud");
+    if (!vp2)
+      return;
+    $("#iv-zoom-in")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      zoomImage(1);
+    });
+    $("#iv-zoom-out")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      zoomImage(-1);
+    });
+    $("#iv-zoom-label")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const d = doc_();
+      if (d?.imageFit)
+        actualSizeImage();
+      else
+        fitImage();
+    });
+    $("#iv-fit")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      fitImage();
+    });
+    $("#iv-100")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      actualSizeImage();
+    });
+    $("#iv-bg")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      cycleImageBg();
+    });
+    $("#iv-pixel")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleImagePixelated();
+    });
+    vp2.addEventListener("mousedown", (e) => {
+      if (e.target.closest("#imgview-hud") || e.button !== 0)
+        return;
+      const d = doc_();
+      if (!d || !d.isImage)
+        return;
+      isPanning = true;
+      panStart = { x: e.clientX, y: e.clientY };
+      panOrigin = { x: d.imagePanX || 0, y: d.imagePanY || 0 };
+      vp2.classList.add("panning");
+      e.preventDefault();
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (!isPanning)
+        return;
+      const d = doc_();
+      if (!d || !d.isImage)
+        return;
+      const dx = e.clientX - panStart.x;
+      const dy = e.clientY - panStart.y;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        d.imageFit = false;
+      }
+      d.imagePanX = panOrigin.x + dx;
+      d.imagePanY = panOrigin.y + dy;
+      applyImageTransform(d);
+    });
+    window.addEventListener("mouseup", () => {
+      if (!isPanning)
+        return;
+      isPanning = false;
+      vp2.classList.remove("panning");
+    });
+    vp2.addEventListener("wheel", (e) => {
+      const d = doc_();
+      if (!d || !d.isImage)
+        return;
+      e.preventDefault();
+      const factor = e.ctrlKey || e.metaKey ? 1.15 : Math.abs(e.deltaY) > 50 ? 1.25 : 1.1;
+      if (e.deltaY < 0) {
+        zoomImage(1, factor);
+      } else {
+        zoomImage(-1, factor);
+      }
+    }, { passive: false });
+    window.addEventListener("resize", () => {
+      const d = doc_();
+      if (d?.isImage && d.imageFit) {
+        applyImageTransform(d);
+      }
+    });
+  }
+
   // web/src/tabs.js
   var closedTabs = [];
   var MAX_CLOSED = 20;
@@ -3371,40 +3757,41 @@
         setStatusNote(path + ": " + e.message, 4000);
         return;
       }
-      if (j.image) {
-        showImage(path);
-        return;
-      }
-      const hasDiff = !!j.diffAvailable;
+      const isImg = !!j.image;
+      const hasDiff = !isImg && !!j.diffAvailable;
       const d2 = {
         path,
         name: path.split("/").pop(),
-        lang: j.lang,
-        total: j.total,
-        maxCols: j.maxCols,
+        lang: isImg ? "image" : j.lang,
+        total: isImg ? 0 : j.total,
+        maxCols: isImg ? 0 : j.maxCols,
         size: j.size,
-        lines: new Array(j.total),
-        chunks: new Set([start2 / CHUNK]),
+        lines: isImg ? [] : new Array(j.total),
+        chunks: new Set(isImg ? [] : [start2 / CHUNK]),
         pending: new Set,
         refining: new Set,
         scrollTop: 0,
         cur: line || 1,
         outline: null,
         gen: 0,
-        markdown: !!j.markdown,
+        markdown: !isImg && !!j.markdown,
+        isImage: isImg,
         gutter: null,
         diffMode: hasDiff ? layoutPref() || "split" : null,
         diffAvailable: hasDiff,
         diffDismissed: false
       };
-      for (let i = 0;i < j.lines.length; i++)
-        d2.lines[j.start + i] = j.lines[i];
-      d2.lsp = j.lsp || { state: "off", server: "" };
+      if (!isImg) {
+        for (let i = 0;i < j.lines.length; i++)
+          d2.lines[j.start + i] = j.lines[i];
+      }
+      d2.lsp = !isImg && j.lsp || { state: "off", server: "" };
       S2.tabs.push(d2);
       idx = S2.tabs.length - 1;
-      if (j.refine)
+      if (!isImg && j.refine)
         refineChunk(d2, start2 / CHUNK);
-      loadGutter(d2);
+      if (!isImg)
+        loadGutter(d2);
     }
     const prev = doc_();
     if (prev && prev !== S2.tabs[idx])
@@ -3416,7 +3803,7 @@
     S2.active = idx;
     const d = S2.tabs[idx];
     $("#empty").hidden = true;
-    hideImage();
+    syncImageView();
     syncPreview();
     syncDiffView();
     if (!S2.at || S2.at.path !== d.path)
@@ -3498,8 +3885,10 @@
         continue;
       }
       const j = res.value;
-      if (j.image)
+      if (j.image) {
+        tgt.oldDoc.size = j.size;
         continue;
+      }
       const keep = tgt.oldDoc;
       const hasDiff = !!j.diffAvailable;
       const newCur = Math.max(1, Math.min(keep.cur || 1, j.total));
@@ -3543,6 +3932,7 @@
       S2.lsp.server = d.lsp && d.lsp.server || "";
       S2.lsp.missing = d.lsp && d.lsp.missing || "";
       warmLSP(d);
+      syncImageView();
       syncPreview();
       syncDiffView();
       layout();
@@ -3582,6 +3972,7 @@
     }
     if (S2.tabs.length === 0) {
       S2.active = -1;
+      syncImageView();
       syncPreview();
       syncDiffView();
       rowsEl.innerHTML = "";
@@ -3594,6 +3985,7 @@
     }
     S2.active = Math.min(i, S2.tabs.length - 1);
     const d = doc_();
+    syncImageView();
     syncPreview();
     syncDiffView();
     drawTabs();
@@ -3618,7 +4010,7 @@
     }
   }
   function drawTabs() {
-    $("#tabs").innerHTML = S2.tabs.map((t, i) => '<div class="tab' + (i === S2.active ? " active" : "") + '" data-i="' + i + '" title="' + esc(t.path) + '">' + '<span class="tn">' + esc(t.name) + '</span><span class="x" data-close="' + i + '" title="' + withKeys("Close tab ({Alt+W})") + '"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6"/></svg></span></div>').join("");
+    $("#tabs").innerHTML = S2.tabs.map((t, i) => '<div class="tab' + (i === S2.active ? " active" : "") + (t.isImage ? " tab-image" : "") + '" data-i="' + i + '" title="' + esc2(t.path) + '">' + (t.isImage ? '<svg class="tab-icon" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="5.5" cy="5.5" r="1.5"/><path d="M14 10l-3.5-3.5L3 14"/></svg>' : "") + '<span class="tn">' + esc2(t.name) + '</span><span class="x" data-close="' + i + '" title="' + withKeys("Close tab ({Alt+W})") + '"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6"/></svg></span></div>').join("");
     const act = $("#tabs .tab.active");
     if (act)
       act.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -3631,6 +4023,7 @@
     if (prev)
       prev.scrollTop = vp.scrollTop;
     S2.active = i;
+    syncImageView();
     syncPreview();
     syncDiffView();
     clearFind();
@@ -3654,19 +4047,6 @@
     const el = $("#crumbs");
     if (el)
       el.innerHTML = "";
-  }
-  function showImage(path) {
-    hideImage();
-    const box = document.createElement("div");
-    box.id = "imgview";
-    box.innerHTML = '<img src="/api/raw?path=' + encodeURIComponent(path) + '" alt="">';
-    editor.appendChild(box);
-    $("#empty").hidden = true;
-  }
-  function hideImage() {
-    const b = $("#imgview");
-    if (b)
-      b.remove();
   }
   function initTabs() {
     $("#tabs").addEventListener("click", (e) => {
@@ -3864,7 +4244,7 @@
     if (vimPending)
       extra += vimPending;
     if (extra) {
-      chip.innerHTML = esc(modeLabel) + ' <span class="status-vim-pending">' + esc(extra) + "</span>";
+      chip.innerHTML = esc2(modeLabel) + ' <span class="status-vim-pending">' + esc2(extra) + "</span>";
     } else {
       chip.textContent = modeLabel;
     }
@@ -4450,11 +4830,11 @@
       <div class="vim-help-content">
         ${VIM_SHORTCUT_SECTIONS.map((sec) => `
           <div class="vim-help-section">
-            <div class="vim-sec-title">${esc(sec.title)}</div>
+            <div class="vim-sec-title">${esc2(sec.title)}</div>
             <dl class="help-grid vim-help-grid">
               ${sec.items.map(([combos, v]) => `
                 <dt>${combos.map(keyCaps).filter(Boolean).join('<span class="key-or">/</span>')}</dt>
-                <dd>${esc(v)}</dd>
+                <dd>${esc2(v)}</dd>
               `).join("")}
             </dl>
           </div>
@@ -5023,7 +5403,7 @@
     const cats = getSettingCategories();
     nav.innerHTML = cats.map((cat) => {
       const active = cat === activeSettingsCategory ? " active" : "";
-      return `<button class="settings-nav-item${active}" data-cat="${esc(cat)}">${esc(cat)}</button>`;
+      return `<button class="settings-nav-item${active}" data-cat="${esc2(cat)}">${esc2(cat)}</button>`;
     }).join("");
   }
   function isSettingModified(key, val, defVal) {
@@ -5062,7 +5442,7 @@
       items = schema.filter((s) => (s.category || s.Category) === activeSettingsCategory);
     }
     if (items.length === 0) {
-      container.innerHTML = `<div class="settings-empty">No matching settings found for "${esc(q || activeSettingsCategory)}".</div>`;
+      container.innerHTML = `<div class="settings-empty">No matching settings found for "${esc2(q || activeSettingsCategory)}".</div>`;
       return;
     }
     const html = items.map((item) => {
@@ -5082,7 +5462,7 @@
         const checked = val === true || val === "true" ? "checked" : "";
         controlHtml = `
         <label class="settings-switch">
-          <input type="checkbox" data-key="${esc(key)}" ${checked}>
+          <input type="checkbox" data-key="${esc2(key)}" ${checked}>
           <span class="settings-slider"></span>
         </label>`;
         const isT = val === true || val === "true";
@@ -5090,20 +5470,20 @@
         <div class="settings-apt-bar">
           <span class="settings-apt-label">Allowed Values:</span>
           <div class="settings-apt-pills">
-            <button type="button" class="settings-pill-tag${isT ? " active" : ""}" data-set-key="${esc(key)}" data-set-val="true" title="Set to true">true</button>
-            <button type="button" class="settings-pill-tag${!isT ? " active" : ""}" data-set-key="${esc(key)}" data-set-val="false" title="Set to false">false</button>
+            <button type="button" class="settings-pill-tag${isT ? " active" : ""}" data-set-key="${esc2(key)}" data-set-val="true" title="Set to true">true</button>
+            <button type="button" class="settings-pill-tag${!isT ? " active" : ""}" data-set-key="${esc2(key)}" data-set-val="false" title="Set to false">false</button>
           </div>
         </div>`;
       } else if (type === "select") {
         const opts = item.options || item.Options || [];
         const optHtml = opts.map((o) => {
           const sel = String(o) === String(val) ? "selected" : "";
-          return `<option value="${esc(o)}" ${sel}>${esc(o)}</option>`;
+          return `<option value="${esc2(o)}" ${sel}>${esc2(o)}</option>`;
         }).join("");
-        controlHtml = `<select class="settings-select" data-key="${esc(key)}">${optHtml}</select>`;
+        controlHtml = `<select class="settings-select" data-key="${esc2(key)}">${optHtml}</select>`;
         const pills = opts.map((o) => {
           const isSel = String(o) === String(val);
-          return `<button type="button" class="settings-pill-tag${isSel ? " active" : ""}" data-set-key="${esc(key)}" data-set-val="${esc(String(o))}" title="Select ${esc(String(o))}">${esc(String(o))}</button>`;
+          return `<button type="button" class="settings-pill-tag${isSel ? " active" : ""}" data-set-key="${esc2(key)}" data-set-val="${esc2(String(o))}" title="Select ${esc2(String(o))}">${esc2(String(o))}</button>`;
         }).join("");
         aptValuesHtml = `
         <div class="settings-apt-bar">
@@ -5119,7 +5499,7 @@
         const minAttr = min !== undefined ? `min="${min}"` : "";
         const maxAttr = max !== undefined ? `max="${max}"` : "";
         const stepAttr = step !== undefined ? `step="${step}"` : 'step="1"';
-        controlHtml = `<input type="number" class="settings-input settings-input-num" data-key="${esc(key)}" value="${esc(String(val))}" ${minAttr} ${maxAttr} ${stepAttr}>`;
+        controlHtml = `<input type="number" class="settings-input settings-input-num" data-key="${esc2(key)}" value="${esc2(String(val))}" ${minAttr} ${maxAttr} ${stepAttr}>`;
         let numberPresets = [];
         if (key === "editor.fontSize")
           numberPresets = [12, 13, 13.5, 14, 16, 18];
@@ -5134,7 +5514,7 @@
         <div class="settings-apt-pills">
           ${numberPresets.map((n) => {
           const isSel = Number(val) === n;
-          return `<button type="button" class="settings-pill-tag${isSel ? " active" : ""}" data-set-key="${esc(key)}" data-set-val="${n}">${n}</button>`;
+          return `<button type="button" class="settings-pill-tag${isSel ? " active" : ""}" data-set-key="${esc2(key)}" data-set-val="${n}">${n}</button>`;
         }).join("")}
         </div>` : "";
         aptValuesHtml = `
@@ -5145,7 +5525,7 @@
           ${presetPills}
         </div>`;
       } else {
-        controlHtml = `<input type="text" class="settings-input" data-key="${esc(key)}" value="${esc(String(val || ""))}">`;
+        controlHtml = `<input type="text" class="settings-input" data-key="${esc2(key)}" value="${esc2(String(val || ""))}">`;
         let stringPresets = [];
         if (key === "agent.harness") {
           stringPresets = ["claude", "gemini", "cursor-agent", "agy", "aider"];
@@ -5156,13 +5536,13 @@
           <div class="settings-apt-pills">
             ${stringPresets.map((s) => {
           const isSel = String(val) === s;
-          return `<button type="button" class="settings-pill-tag${isSel ? " active" : ""}" data-set-key="${esc(key)}" data-set-val="${esc(s)}">${esc(s)}</button>`;
+          return `<button type="button" class="settings-pill-tag${isSel ? " active" : ""}" data-set-key="${esc2(key)}" data-set-val="${esc2(s)}">${esc2(s)}</button>`;
         }).join("")}
           </div>
         </div>` : "";
         aptValuesHtml = presetPills;
       }
-      const resetBtn = modified ? `<button class="settings-reset-btn" data-reset="${esc(key)}" title="Reset to default (${esc(String(def))})">Reset</button>` : "";
+      const resetBtn = modified ? `<button class="settings-reset-btn" data-reset="${esc2(key)}" title="Reset to default (${esc2(String(def))})">Reset</button>` : "";
       const extraAction = key === "editor.vimMode" ? `
       <div style="margin: 6px 0 2px;">
         <button type="button" class="settings-btn-link btn-vim-cheatsheet-trigger" style="cursor:pointer;font-size:11.5px;display:inline-flex;align-items:center;gap:4px;color:var(--accent-fg);">
@@ -5170,20 +5550,20 @@
         </button>
       </div>` : "";
       return `
-      <div class="settings-card${modClass}" data-setting="${esc(key)}">
+      <div class="settings-card${modClass}" data-setting="${esc2(key)}">
         <div class="settings-card-left">
           <div class="settings-card-header">
-            <span class="settings-card-title">${esc(title)}</span>
-            <span class="settings-card-key">${esc(key)}</span>
-            <span class="settings-tag tag-cat">${esc(cat)}</span>
-            <span class="settings-tag tag-type">${esc(type)}</span>
+            <span class="settings-card-title">${esc2(title)}</span>
+            <span class="settings-card-key">${esc2(key)}</span>
+            <span class="settings-tag tag-cat">${esc2(cat)}</span>
+            <span class="settings-tag tag-type">${esc2(type)}</span>
           </div>
-          <div class="settings-card-desc">${esc(desc)}</div>
+          <div class="settings-card-desc">${esc2(desc)}</div>
           ${aptValuesHtml}
           ${extraAction}
           <div class="settings-card-meta">
-            <span class="settings-tag tag-current">Current: <b>${esc(String(val))}</b></span>
-            <span class="settings-tag tag-default">Default: <code>${esc(String(def))}</code></span>
+            <span class="settings-tag tag-current">Current: <b>${esc2(String(val))}</b></span>
+            <span class="settings-tag tag-default">Default: <code>${esc2(String(def))}</code></span>
             ${modified ? `<span class="settings-tag tag-modified">Modified</span>` : ""}
             ${resetBtn}
           </div>
@@ -5408,8 +5788,8 @@
   ];
   function showHelp() {
     const h = $("#helpsheet");
-    const ver = S2.meta?.version ? ` <span class="help-version">v${esc(S2.meta.version)}</span>` : "";
-    h.innerHTML = '<div class="help-card"><div class="help-header"><h2>Keyboard Shortcuts</h2>' + ver + '<button id="btn-switch-to-vim-help" class="settings-btn-link" style="margin-left:auto;font-size:12px;cursor:pointer;">View Vim Keybindings</button></div><dl class="help-grid">' + SHORTCUTS.map(([combos, v]) => "<dt>" + combos.map(keyCaps).filter(Boolean).join('<span class="key-or">/</span>') + "</dt>" + "<dd>" + esc(v) + "</dd>").join("") + "</dl></div>";
+    const ver = S2.meta?.version ? ` <span class="help-version">v${esc2(S2.meta.version)}</span>` : "";
+    h.innerHTML = '<div class="help-card"><div class="help-header"><h2>Keyboard Shortcuts</h2>' + ver + '<button id="btn-switch-to-vim-help" class="settings-btn-link" style="margin-left:auto;font-size:12px;cursor:pointer;">View Vim Keybindings</button></div><dl class="help-grid">' + SHORTCUTS.map(([combos, v]) => "<dt>" + combos.map(keyCaps).filter(Boolean).join('<span class="key-or">/</span>') + "</dt>" + "<dd>" + esc2(v) + "</dd>").join("") + "</dl></div>";
     h.hidden = false;
     h.querySelector("#btn-switch-to-vim-help")?.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -5458,6 +5838,11 @@
     addEventListener("keydown", (e) => {
       const mod = e[MOD];
       if (e.key === "Escape") {
+        const lb = $("#img-lightbox");
+        if (lb && !lb.hidden) {
+          lb.hidden = true;
+          return;
+        }
         if (!$("#vim-helpsheet")?.hidden) {
           closeVimHelp();
           return;
@@ -5647,6 +6032,11 @@
       const d = doc_();
       if (!d)
         return;
+      if (d.isImage) {
+        if (handleImageKey(e))
+          e.preventDefault();
+        return;
+      }
       if (previewing(d)) {
         if (previewKey(e))
           e.preventDefault();
@@ -5880,7 +6270,7 @@
   }, 40);
   function fuzzyHTML(text, pos) {
     if (!pos || !pos.length)
-      return esc(text);
+      return esc2(text);
     const set = new Set(pos);
     let out = "", open = false;
     for (let i = 0;i < text.length; i++) {
@@ -5893,7 +6283,7 @@
         out += "</b>";
         open = false;
       }
-      out += esc(text[i]);
+      out += esc2(text[i]);
     }
     return out + (open ? "</b>" : "");
   }
@@ -5904,7 +6294,7 @@
       palList.innerHTML = '<div class="pi"><span class="pp">No matches</span></div>';
       return;
     }
-    palList.innerHTML = pal.items.map((it, i) => '<div class="pi' + (i === pal.sel ? " sel" : "") + '" data-i="' + i + '">' + '<span class="pn">' + (it.raw ? it.label : esc(it.label)) + "</span>" + '<span class="pp">' + (it.raw ? it.sub : esc(it.sub || "")) + "</span>" + (it.right ? '<span class="pr">' + esc(it.right) + "</span>" : "") + "</div>").join("");
+    palList.innerHTML = pal.items.map((it, i) => '<div class="pi' + (i === pal.sel ? " sel" : "") + '" data-i="' + i + '">' + '<span class="pn">' + (it.raw ? it.label : esc2(it.label)) + "</span>" + '<span class="pp">' + (it.raw ? it.sub : esc2(it.sub || "")) + "</span>" + (it.right ? '<span class="pr">' + esc2(it.right) + "</span>" : "") + "</div>").join("");
     const s = palList.children[pal.sel];
     if (s)
       s.scrollIntoView({ block: "nearest" });
@@ -6259,7 +6649,7 @@
       S2.meta.agentModel = j.model || "";
       S2.meta.agentPinned = !!j.pinned;
     } catch (e) {
-      session.pickEl.innerHTML = '<div class="hint">Could not look for harnesses: ' + esc(e.message) + "</div>";
+      session.pickEl.innerHTML = '<div class="hint">Could not look for harnesses: ' + esc2(e.message) + "</div>";
       return;
     }
     const ready = list.filter((h) => h.installed);
@@ -6284,19 +6674,19 @@
     let html = "";
     for (const h of ready) {
       const isSelected = h.name === chosen();
-      html += '<div class="agent-opt-wrap">' + '<button class="agent-opt' + (isSelected ? " on" : "") + '" data-pick="' + esc(h.name) + '">' + '<span class="agent-opt-name">' + esc(h.name) + "</span>" + '<code class="agent-opt-cmd">' + esc(h.cmd) + "</code></button>";
+      html += '<div class="agent-opt-wrap">' + '<button class="agent-opt' + (isSelected ? " on" : "") + '" data-pick="' + esc2(h.name) + '">' + '<span class="agent-opt-name">' + esc2(h.name) + "</span>" + '<code class="agent-opt-cmd">' + esc2(h.cmd) + "</code></button>";
       if (isSelected && h.models && h.models.length > 0) {
-        html += '<div class="agent-model-row">' + '<span class="agent-model-label">Model:</span>' + '<select class="agent-model-select" data-harness="' + esc(h.name) + '">';
+        html += '<div class="agent-model-row">' + '<span class="agent-model-label">Model:</span>' + '<select class="agent-model-select" data-harness="' + esc2(h.name) + '">';
         for (const m of h.models) {
           const sel = m === (h.model || chosenModel()) ? " selected" : "";
-          html += '<option value="' + esc(m) + '"' + sel + ">" + esc(m) + "</option>";
+          html += '<option value="' + esc2(m) + '"' + sel + ">" + esc2(m) + "</option>";
         }
         html += "</select></div>";
       }
       html += "</div>";
     }
     if (settingsPath)
-      html += '<div class="agent-note">Remembered in ' + esc(settingsPath) + "</div>";
+      html += '<div class="agent-note">Remembered in ' + esc2(settingsPath) + "</div>";
     return html;
   }
   async function pick(session, name) {
@@ -6474,6 +6864,7 @@
   initStatusFit();
   initSettings();
   initVim();
+  initImageViewer();
   (async function boot() {
     try {
       initTheme();
