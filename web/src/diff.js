@@ -16,7 +16,7 @@ let shown = null; // doc the diff view is currently showing, null while hidden
 // d.diffMode is 'split' | 'unified' | null (off), per tab. The layout last
 // picked (split vs unified) is remembered globally as the default for the
 // next file entering diff view.
-function setLayoutPref(mode) {
+export function setLayoutPref(mode) {
   try { localStorage.setItem('px0.diffLayout', mode); } catch {}
 }
 

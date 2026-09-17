@@ -75,6 +75,7 @@ export const S = {
   wrap: true,        // word wrap (default ON)
   lineNumbers: true, // line numbers gutter (default ON)
   mdPreview: true,   // Markdown tabs open rendered (default ON)
+  settings: null,    // loaded from /api/settings
   agentTargets: [],  // [{ id, path, l1, l2 }, ...] ranges of open compose/edit sessions
 };
 

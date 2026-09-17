@@ -29,7 +29,26 @@ export function toggleWordWrap(forced) {
   render();
 }
 
-export function toggleLineNumbers() {}
+export function toggleLineNumbers(forced) {
+  S.lineNumbers = typeof forced === 'boolean' ? forced : !S.lineNumbers;
+  document.body.classList.toggle('hide-lines', !S.lineNumbers);
+  layout();
+  render();
+}
+
+export function applyEditorTypography(fontSize, fontFamily, lineHeight, tabSize) {
+  if (fontSize) document.documentElement.style.setProperty('--fs', fontSize + 'px');
+  if (fontFamily) document.documentElement.style.setProperty('--mono', fontFamily);
+  if (lineHeight) {
+    document.documentElement.style.setProperty('--lh', lineHeight + 'px');
+  } else if (fontSize) {
+    document.documentElement.style.setProperty('--lh', Math.round(fontSize * 1.5) + 'px');
+  }
+  if (tabSize) document.documentElement.style.setProperty('--tab-size', tabSize);
+  measure();
+  layout();
+  render();
+}
 
 export function updateEditorOptionControls() {
   const wrapBtn = $('[data-action="wrap"]');

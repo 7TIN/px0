@@ -17,11 +17,13 @@ import { SEL_KEYS, runSelectionAction, selectAll, clearSelectAll, copySelectAll 
 import { cycleTheme } from './theme.js';
 import { previewing, togglePreview, previewKey, selectPreview } from './markdown.js';
 import { toggleDiff } from './diff.js';
+import { openSettings, closeSettings, isSettingsOpen } from './settings.js';
 
 /* Each entry lists alternative combos, written as for keyLabel in state.js so
    they show as ⌘/⌥/⇧ on a Mac and Ctrl/Alt/Shift elsewhere. Browsers keep
    Ctrl+W and Cmd+W for themselves, so Alt+W is the close shortcut shown. */
 export const SHORTCUTS = [
+  [['Mod+,'], 'Open settings'],
   [['Mod+K'], 'Quick search / palette'], [['Mod+P'], 'Go to file'],
   [['Mod+Shift+P'], 'Command palette'], [['Mod+Shift+O'], 'Go to symbol'],
   [['Mod+Shift+F'], 'Search in files'], [['Mod+F'], 'Find in file'],
@@ -58,6 +60,7 @@ export const inField = el => el && (el.tagName === 'INPUT' || el.tagName === 'TE
 
 export function initShortcuts() {
   $('#btn-theme')?.addEventListener('click', cycleTheme);
+  $('#btn-settings')?.addEventListener('click', () => openSettings('ui'));
   $('#btn-help')?.addEventListener('click', showHelp);
   $('#st-ver')?.addEventListener('click', showHelp);
   $('#helpsheet').addEventListener('click', () => { $('#helpsheet').hidden = true; });
@@ -75,6 +78,7 @@ export function initShortcuts() {
     else if (act === 'wrap') toggleWordWrap();
     else if (act === 'md-preview') togglePreview();
     else if (act === 'palette') openPalette('command');
+    else if (act === 'settings') openSettings('ui');
     else if (act === 'help') showHelp();
   });
 
@@ -82,6 +86,7 @@ export function initShortcuts() {
     const mod = e[MOD];
 
     if (e.key === 'Escape') {
+      if (isSettingsOpen()) { closeSettings(); return; }
       if (!overlay.hidden) { closePalette(); return; }
       if (!$('#helpsheet').hidden) { $('#helpsheet').hidden = true; return; }
       if (!hovercard.hidden) { clearLink(); return; }
@@ -90,6 +95,12 @@ export function initShortcuts() {
       if (!document.body.classList.contains('right-hidden')) { hideRightInspector(); return; }
       if (S.occ) { S.occ = null; paint(); return; }
       if (inField(document.activeElement)) document.activeElement.blur();
+      return;
+    }
+
+    if (mod && (e.key === ',' || e.key === '<')) {
+      e.preventDefault();
+      openSettings('ui');
       return;
     }
 

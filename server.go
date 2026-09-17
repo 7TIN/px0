@@ -84,6 +84,7 @@ func NewServer(ix *Index, lsp *lspManager) *Server {
 	s.mux.HandleFunc("/api/agent/edit", s.handleAgentEdit)
 	s.mux.HandleFunc("/api/agent/job", s.handleAgentJob)
 	s.mux.HandleFunc("/api/agent/cancel", s.handleAgentCancel)
+	s.mux.HandleFunc("/api/settings", s.handleSettings)
 	s.lastReq.Store(time.Now().UnixNano())
 	go s.scavenge()
 	return s
@@ -769,3 +770,68 @@ func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {
 	n, _, ms := s.ix.Stats()
 	writeJSON(w, map[string]any{"files": n, "indexMs": ms})
 }
+
+func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, map[string]any{
+			"settings": readMergedSettingsMap(),
+			"defaults": defaultSettingsMap(),
+			"schema":   settingsSchema,
+			"raw":      readRawSettingsJSON(),
+			"path":     settingsPath(),
+		})
+	case http.MethodPost:
+		if !localPost(w, r) {
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20)) // 1MB limit
+		if err != nil {
+			fail(w, 400, "failed to read body")
+			return
+		}
+		var payload map[string]any
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &payload); err != nil {
+				fail(w, 400, "invalid JSON: "+err.Error())
+				return
+			}
+		} else {
+			payload = make(map[string]any)
+			for k, vs := range r.URL.Query() {
+				if len(vs) > 0 {
+					payload[k] = vs[0]
+				}
+			}
+		}
+
+		if rawStr, ok := payload["raw"].(string); ok {
+			if err := saveRawSettingsJSON([]byte(rawStr)); err != nil {
+				fail(w, 400, "invalid JSON in settings: "+err.Error())
+				return
+			}
+		} else {
+			if err := updateSettingsMap(payload); err != nil {
+				fail(w, 500, err.Error())
+				return
+			}
+		}
+
+		if s.agent != nil {
+			currentSettings := readSettings()
+			if currentSettings.Agent != "" && currentSettings.Agent != s.agent.Name() {
+				_ = s.agent.Select(currentSettings.Agent, s.agent.Model())
+			}
+		}
+
+		writeJSON(w, map[string]any{
+			"settings": readMergedSettingsMap(),
+			"raw":      readRawSettingsJSON(),
+			"path":     settingsPath(),
+			"ok":       true,
+		})
+	default:
+		fail(w, 405, "method not allowed")
+	}
+}
+

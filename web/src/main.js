@@ -18,7 +18,8 @@ import { initTheme } from './theme.js';
 import { initMarkdown } from './markdown.js';
 import { initDiff } from './diff.js';
 import { initAgent, applyAgentMeta, loadAgentAsync } from './agent.js';
-import { updateStatus, initMetrics, initStatusFit, updateMetricsDisplay } from './status.js';
+import { initMetrics, initStatusFit, updateMetricsDisplay, updateStatus } from './status.js';
+import { initSettings } from './settings.js';
 
 // Initialize all subsystems
 initRenderer();
@@ -40,6 +41,7 @@ initDiff();
 initAgent();
 initMetrics();
 initStatusFit();
+initSettings();
 
 // Bootstrap application lifecycle
 (async function boot() {
