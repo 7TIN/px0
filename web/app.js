@@ -5,10 +5,21 @@
   var esc2 = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   var request = async (method, path, params, opts = {}) => {
     const u = new URL(path, location.origin);
-    for (const [k, v] of Object.entries(params || {}))
-      if (v !== undefined && v !== "")
-        u.searchParams.set(k, v);
-    const r = await fetch(u, { method, ...opts });
+    const fetchOpts = { method, ...opts };
+    const isPost = method === "POST" || method === "PUT" || method === "PATCH";
+    if (params) {
+      const hasComplex = typeof params === "object" && params !== null && (Array.isArray(params) || Object.values(params).some((v) => typeof v === "object" && v !== null));
+      if (isPost && (opts.json || hasComplex)) {
+        fetchOpts.headers = { "Content-Type": "application/json", ...opts.headers || {} };
+        fetchOpts.body = JSON.stringify(params);
+      } else {
+        for (const [k, v] of Object.entries(params)) {
+          if (v !== undefined && v !== "")
+            u.searchParams.set(k, v);
+        }
+      }
+    }
+    const r = await fetch(u, fetchOpts);
     const j = await r.json();
     if (j.error)
       throw Object.assign(new Error(j.error), { body: j });
@@ -16,6 +27,7 @@
   };
   var api = (path, params, opts) => request("GET", path, params, opts);
   var apiPost = (path, params, opts) => request("POST", path, params, opts);
+  var apiPostJson = (path, params, opts) => request("POST", path, params, { json: true, ...opts });
   var debounce = (fn, ms) => {
     let t;
     return (...a) => {
@@ -219,6 +231,8 @@
         rc += " cur";
       if (agentRanges.some((r) => n >= r.l1 && n <= r.l2))
         rc += " agent-sel";
+      if (agentRanges.some((r) => n === r.l1))
+        rc += " agent-anchor";
       if (gut) {
         const m = gut.marks.get(n);
         if (m)
@@ -735,6 +749,30 @@
     const i = name.lastIndexOf(".");
     return i > 0 && FILE_KIND[name.slice(i + 1).toLowerCase()] || "other";
   }
+  async function refreshTree() {
+    await drawTree("", treeEl, 0);
+    const dirs = Array.from(openDirs).sort((a, b) => a.split("/").length - b.split("/").length);
+    for (const path of dirs) {
+      const dirRow = treeEl.querySelector('[data-dir="' + CSS.escape(path) + '"]');
+      const kids = treeEl.querySelector('[data-kids="' + CSS.escape(path) + '"]');
+      if (kids && dirRow) {
+        dirRow.classList.add("open");
+        kids.classList.add("open");
+        kids.dataset.loaded = "1";
+        await drawTree(path, kids, path.split("/").length);
+      } else {
+        openDirs.delete(path);
+      }
+    }
+  }
+  function restoreOpenDirs(dirs) {
+    if (Array.isArray(dirs)) {
+      for (const d of dirs) {
+        if (typeof d === "string")
+          openDirs.add(d);
+      }
+    }
+  }
   async function revealDir(dir) {
     const parts = dir.split("/");
     for (let i = 0;i < parts.length; i++) {
@@ -742,13 +780,23 @@
       const row = treeEl.querySelector('[data-dir="' + CSS.escape(p) + '"]');
       if (!row)
         break;
-      if (!row.classList.contains("open"))
-        row.click();
-      await new Promise((r) => setTimeout(r, 30));
+      if (!row.classList.contains("open")) {
+        row.classList.add("open");
+        const kids = treeEl.querySelector('[data-kids="' + CSS.escape(p) + '"]');
+        if (kids) {
+          kids.classList.add("open");
+          openDirs.add(p);
+          kids.dataset.loaded = "1";
+          await drawTree(p, kids, p.split("/").length);
+        }
+      }
     }
     const last = treeEl.querySelector('[data-dir="' + CSS.escape(dir) + '"]');
     if (last)
       last.scrollIntoView({ block: "center" });
+    try {
+      sessionStorage.setItem("px0.openDirs", JSON.stringify(Array.from(openDirs)));
+    } catch {}
   }
   async function revealFile(path) {
     const idx = path.lastIndexOf("/");
@@ -775,12 +823,13 @@
         kids.classList.toggle("open", open);
         if (open) {
           openDirs.add(path);
-          if (!kids.dataset.loaded) {
-            kids.dataset.loaded = "1";
-            await drawTree(path, kids, path.split("/").length);
-          }
+          kids.dataset.loaded = "1";
+          await drawTree(path, kids, path.split("/").length);
         } else
           openDirs.delete(path);
+        try {
+          sessionStorage.setItem("px0.openDirs", JSON.stringify(Array.from(openDirs)));
+        } catch {}
         return;
       }
       const f = e.target.closest("[data-file]");
@@ -798,18 +847,21 @@
     layout();
     render();
   }
-  function initPanels() {
-    $("#btn-reindex").addEventListener("click", async () => {
+  async function reindexWorkspace() {
+    try {
       const j = await api("/api/reindex");
       S2.meta.files = j.files;
       S2.meta.indexMs = j.indexMs;
-      treeEl.innerHTML = "";
-      openDirs.clear();
-      await drawTree("", treeEl, 0);
+      await refreshTree();
       await reloadOpenTabs();
       updateStatus();
-      showToast("✓", "Workspace reindexed");
-    });
+      showToast("✓", "Workspace refreshed");
+    } catch (e) {
+      showToast("!", "Refresh failed: " + e.message);
+    }
+  }
+  function initPanels() {
+    $("#btn-reindex").addEventListener("click", reindexWorkspace);
     (() => {
       const rz = $("#resizer");
       let dragging = false;
@@ -2706,14 +2758,18 @@
       return "split";
     }
   }
-  function syncDiffView() {
+  function syncDiffView(force = false) {
     const d = doc_();
     const want = d && d.diffMode ? d : null;
-    if (want !== shown) {
+    if (force && want) {
+      want.diffText = undefined;
+      want.diffHunks = undefined;
+    }
+    if (want !== shown || force) {
       shown = want;
       diffview.hidden = !want;
       if (want)
-        drawDiff(want);
+        drawDiff(want, force);
       else
         diffContent.replaceChildren();
     } else if (want && want.diffHunks !== undefined) {
@@ -2755,11 +2811,11 @@
     syncDiffView();
     updateStatus();
   }
-  async function drawDiff(d) {
-    if (d.diffText === undefined) {
+  async function drawDiff(d, force = false) {
+    if (force || d.diffText === undefined) {
       diffContent.replaceChildren();
       try {
-        d.diffReq = d.diffReq || api("/api/diff", { path: d.path });
+        d.diffReq = api("/api/diff", { path: d.path });
         const j = await d.diffReq;
         d.diffText = j.diff || "";
         d.diffHunks = parseDiff(d.diffText);
@@ -2806,7 +2862,9 @@
     for (const el of diffview.querySelectorAll("[data-l]")) {
       const l = +el.dataset.l;
       const inAgent = ranges.some((r) => l >= r.l1 && l <= r.l2);
+      const isAnchor = ranges.some((r) => l === r.l1);
       el.classList.toggle("agent-sel", inAgent);
+      el.classList.toggle("agent-anchor", isAnchor);
     }
   }
   function hunkHeader(hunk) {
@@ -3326,8 +3384,18 @@
     return true;
   }
   function runSelectionAction(act) {
-    if (!current)
+    if (!current) {
+      if (act === "agent-edit") {
+        const d = doc_();
+        if (d && agentHandler) {
+          const line = d.cur || 1;
+          const text2 = d.lines && d.lines[line - 1] || "";
+          agentHandler({ text: text2, l1: line, l2: line, path: d.path });
+          return true;
+        }
+      }
       return false;
+    }
     const { text, path } = current;
     const ref = selectionRef(current);
     if (act === "copy-ref") {
@@ -3826,11 +3894,13 @@
       loadOutline();
     if (push)
       pushHistory(path, line || d.cur, col);
+    saveWorkspaceState();
   }
-  function loadGutter(d) {
+  async function loadGutter(d) {
     if (!S2.meta?.git)
       return;
-    api("/api/gutter", { path: d.path }).then((j) => {
+    try {
+      const j = await api("/api/gutter", { path: d.path });
       d.diffAvailable = !!j.available;
       if (j.available && d.diffMode === null && !d.diffDismissed) {
         d.diffMode = layoutPref() || "split";
@@ -3839,19 +3909,22 @@
           syncPreview();
         }
       }
-      if (doc_() === d)
+      if (!j.available) {
+        d.gutter = null;
+      } else {
+        const marks = new Map;
+        for (const n of j.modified)
+          marks.set(n, "mod");
+        for (const n of j.added)
+          marks.set(n, "add");
+        d.gutter = { marks, dels: new Set(j.deleted) };
+      }
+      if (doc_() === d) {
         updateStatus();
-      if (!j.available)
-        return;
-      const marks = new Map;
-      for (const n of j.modified)
-        marks.set(n, "mod");
-      for (const n of j.added)
-        marks.set(n, "add");
-      d.gutter = { marks, dels: new Set(j.deleted) };
-      if (doc_() === d)
         render();
-    }).catch(() => {});
+      }
+      drawTabs();
+    } catch {}
   }
   async function reloadOpenTabs() {
     if (S2.tabs.length === 0)
@@ -3924,8 +3997,8 @@
       S2.tabs[idx] = d2;
       if (j.refine)
         refineChunk(d2, tgt.start / CHUNK);
-      loadGutter(d2);
     }
+    await Promise.allSettled(S2.tabs.filter((t) => !t.isImage).map((t) => loadGutter(t)));
     const d = doc_();
     if (d) {
       S2.lsp.state = d.lsp && d.lsp.state || "off";
@@ -3934,7 +4007,7 @@
       warmLSP(d);
       syncImageView();
       syncPreview();
-      syncDiffView();
+      syncDiffView(true);
       layout();
       vp.scrollTop = d.scrollTop;
       render();
@@ -3944,6 +4017,7 @@
     drawTabs();
     drawCrumbs();
     updateStatus();
+    saveWorkspaceState();
   }
   function centerLine(n) {
     if (previewing()) {
@@ -3981,6 +4055,7 @@
       drawCrumbs();
       drawTabs();
       updateStatus();
+      saveWorkspaceState();
       return;
     }
     S2.active = Math.min(i, S2.tabs.length - 1);
@@ -3994,6 +4069,7 @@
     vp.scrollTop = d.scrollTop;
     render();
     updateStatus();
+    saveWorkspaceState();
   }
   async function reopenClosedTab() {
     while (closedTabs.length) {
@@ -4010,7 +4086,7 @@
     }
   }
   function drawTabs() {
-    $("#tabs").innerHTML = S2.tabs.map((t, i) => '<div class="tab' + (i === S2.active ? " active" : "") + (t.isImage ? " tab-image" : "") + '" data-i="' + i + '" title="' + esc2(t.path) + '">' + (t.isImage ? '<svg class="tab-icon" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="5.5" cy="5.5" r="1.5"/><path d="M14 10l-3.5-3.5L3 14"/></svg>' : "") + '<span class="tn">' + esc2(t.name) + '</span><span class="x" data-close="' + i + '" title="' + withKeys("Close tab ({Alt+W})") + '"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6"/></svg></span></div>').join("");
+    $("#tabs").innerHTML = S2.tabs.map((t, i) => '<div class="tab' + (i === S2.active ? " active" : "") + (t.isImage ? " tab-image" : "") + (t.diffAvailable ? " git-modified" : "") + '" data-i="' + i + '" title="' + esc2(t.path) + '">' + (t.isImage ? '<svg class="tab-icon" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="5.5" cy="5.5" r="1.5"/><path d="M14 10l-3.5-3.5L3 14"/></svg>' : "") + '<span class="tn">' + esc2(t.name) + "</span>" + (t.diffAvailable ? '<span class="tab-git-dot" title="Modified in git">●</span>' : "") + '<span class="x" data-close="' + i + '" title="' + withKeys("Close tab ({Alt+W})") + '"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6"/></svg></span></div>').join("");
     const act = $("#tabs .tab.active");
     if (act)
       act.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -4042,6 +4118,33 @@
     if ($("#panel-outline")?.classList.contains("active"))
       loadOutline();
     pushHistory(S2.tabs[i].path, S2.tabs[i].cur);
+    saveWorkspaceState();
+  }
+  function saveWorkspaceState() {
+    try {
+      const tabs = S2.tabs.map((t) => ({ path: t.path, cur: t.cur }));
+      sessionStorage.setItem("px0.tabs", JSON.stringify({ tabs, active: S2.active }));
+    } catch {}
+  }
+  async function restoreWorkspaceTabs() {
+    try {
+      const saved = sessionStorage.getItem("px0.tabs");
+      if (!saved)
+        return false;
+      const { tabs, active } = JSON.parse(saved);
+      if (!Array.isArray(tabs) || tabs.length === 0)
+        return false;
+      for (const t of tabs) {
+        if (t.path)
+          await openFile(t.path, { line: t.cur, push: false });
+      }
+      if (typeof active === "number" && active >= 0 && active < S2.tabs.length) {
+        switchTab(active);
+      }
+      return true;
+    } catch {
+      return false;
+    }
   }
   function drawCrumbs() {
     const el = $("#crumbs");
@@ -5751,6 +5854,873 @@
     });
   }
 
+  // web/src/agent.js
+  var box = $("#agentbox");
+  var tpl = $("#agentbox-tpl");
+  var listEl2 = $("#agentbox-list");
+  var batchBar = $("#agent-batch-bar");
+  var batchCount = $("#agent-batch-count");
+  var batchClear = $("#agent-batch-clear");
+  var batchHarness = $("#agent-batch-harness");
+  var batchModel = $("#agent-batch-model");
+  var batchHint = $("#agent-batch-hint");
+  var batchApply = $("#agent-batch-apply");
+  var batchCancel = $("#agent-batch-cancel");
+  var batchErr = $("#agent-batch-err");
+  var sessions = new Map;
+  var agentSeq = 0;
+  var batchTimer = null;
+  var batchJobId = null;
+  var batchElapsed = "";
+  var activeBatchTargets = null;
+  var installed = () => (S2.meta?.agents || []).filter((h) => h.installed);
+  var chosen = () => S2.meta && S2.meta.agent || "";
+  var chosenModel = () => S2.meta && S2.meta.agentModel || "";
+  var targetRef = ({ path, l1, l2 }) => path + ":" + (l1 === l2 ? l1 : l1 + "-" + l2);
+  var rangesOverlap = (a, b) => a.path === b.path && a.l1 <= b.l2 && b.l1 <= a.l2;
+  function applyAgentMeta() {
+    for (const session of sessions.values()) {
+      updateSessionMeta(session);
+    }
+    syncBatchMeta();
+  }
+  function updateSessionMeta(session) {
+    if (!session.harnessSelect || !session.modelSelect)
+      return;
+    const ready = (S2.meta?.agents || []).filter((h) => h.installed);
+    const currentHarness = chosen();
+    const currentModel = chosenModel();
+    session.harnessSelect.innerHTML = "";
+    if (!ready.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "no harness";
+      session.harnessSelect.appendChild(opt);
+      session.harnessSelect.disabled = true;
+      session.modelSelect.innerHTML = "";
+      session.modelSelect.hidden = true;
+      return;
+    }
+    for (const h of ready) {
+      const opt = document.createElement("option");
+      opt.value = h.name;
+      opt.textContent = h.name;
+      if (h.name === currentHarness)
+        opt.selected = true;
+      session.harnessSelect.appendChild(opt);
+    }
+    const isBusy = session.el.classList.contains("busy");
+    session.harnessSelect.disabled = isBusy || !!(S2.meta && S2.meta.agentPinned);
+    session.harnessSelect.title = S2.meta && S2.meta.agentPinned ? "Fixed for this run by -agent" : "Change the coding harness";
+    const activeH = ready.find((h) => h.name === (session.harnessSelect.value || currentHarness)) || ready[0];
+    session.modelSelect.innerHTML = "";
+    const models = activeH?.models || [];
+    if (models.length > 0) {
+      for (const m of models) {
+        const opt = document.createElement("option");
+        opt.value = m;
+        opt.textContent = m;
+        if (m === currentModel)
+          opt.selected = true;
+        session.modelSelect.appendChild(opt);
+      }
+      session.modelSelect.hidden = false;
+      session.modelSelect.disabled = isBusy;
+      session.modelSelect.title = "Model for " + activeH.name;
+    } else {
+      session.modelSelect.hidden = true;
+    }
+  }
+  async function loadAgentAsync() {
+    try {
+      const j = await api("/api/agent/harnesses");
+      S2.meta.agents = j.harnesses || [];
+      S2.meta.agent = j.selected || S2.meta.agent || "";
+      S2.meta.agentModel = j.model || S2.meta.agentModel || "";
+      S2.meta.agentPinned = !!j.pinned;
+      applyAgentMeta();
+    } catch {}
+  }
+  function syncBatchMeta() {
+    if (!batchHarness || !batchModel)
+      return;
+    const ready = installed();
+    const currentHarness = chosen();
+    const currentModel = chosenModel();
+    batchHarness.innerHTML = "";
+    if (!ready.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "no harness";
+      batchHarness.appendChild(opt);
+      batchHarness.disabled = true;
+      batchModel.innerHTML = "";
+      batchModel.hidden = true;
+      return;
+    }
+    for (const h of ready) {
+      const opt = document.createElement("option");
+      opt.value = h.name;
+      opt.textContent = h.name;
+      if (h.name === currentHarness)
+        opt.selected = true;
+      batchHarness.appendChild(opt);
+    }
+    const isBusy = !!batchJobId;
+    batchHarness.disabled = isBusy || !!(S2.meta && S2.meta.agentPinned);
+    batchHarness.title = S2.meta && S2.meta.agentPinned ? "Fixed for this run by -agent" : "Change the coding harness";
+    const activeH = ready.find((h) => h.name === (batchHarness.value || currentHarness)) || ready[0];
+    batchModel.innerHTML = "";
+    const models = activeH?.models || [];
+    if (models.length > 0) {
+      for (const m of models) {
+        const opt = document.createElement("option");
+        opt.value = m;
+        opt.textContent = m;
+        if (m === currentModel)
+          opt.selected = true;
+        batchModel.appendChild(opt);
+      }
+      batchModel.hidden = false;
+      batchModel.disabled = isBusy;
+      batchModel.title = "Model for " + activeH.name;
+    } else {
+      batchModel.hidden = true;
+    }
+  }
+  function getReadySessions() {
+    return [...sessions.values()].filter((s) => !s.timer && !s.jobId);
+  }
+  function syncBatchBar() {
+    if (!batchBar)
+      return;
+    const total = sessions.size;
+    const ready = getReadySessions();
+    const readyCount = ready.length;
+    const runningCount = total - readyCount;
+    box.classList.toggle("has-batch", total >= 2);
+    if (total >= 2 || batchJobId) {
+      batchBar.hidden = false;
+      if (batchJobId) {
+        if (batchCount) {
+          batchCount.textContent = readyCount > 0 ? readyCount + " remaining (" + (activeBatchTargets?.length || 0) + " in batch)" : (activeBatchTargets?.length || 0) + " in batch";
+        }
+        if (batchApply)
+          batchApply.hidden = true;
+        if (batchCancel)
+          batchCancel.hidden = false;
+      } else {
+        if (batchCount) {
+          if (runningCount > 0) {
+            batchCount.textContent = readyCount + " remaining (" + runningCount + " running)";
+          } else {
+            batchCount.textContent = readyCount + " comments";
+          }
+        }
+        if (batchApply) {
+          batchApply.hidden = false;
+          batchApply.disabled = readyCount === 0;
+          const btnLabel = runningCount > 0 ? "Apply Remaining (" + readyCount + ")" : "Apply All (" + readyCount + ")";
+          batchApply.textContent = btnLabel;
+          batchApply.title = btnLabel + " (" + keyLabel("Mod+Enter") + ")";
+        }
+        if (batchCancel)
+          batchCancel.hidden = true;
+        if (batchHint) {
+          batchHint.textContent = readyCount > 0 ? keyLabel("Mod+Enter") + " to apply " + (runningCount > 0 ? "remaining" : "all") : runningCount > 0 ? runningCount + " running..." : "";
+        }
+      }
+      syncBatchMeta();
+    } else {
+      batchBar.hidden = true;
+    }
+  }
+  function anyInFlight() {
+    if (batchTimer || batchJobId)
+      return true;
+    for (const s of sessions.values())
+      if (s.timer || s.jobId)
+        return true;
+    return false;
+  }
+  function syncBoxVisibility() {
+    box.hidden = sessions.size === 0;
+    syncBatchBar();
+  }
+  function openAgentEdit(info) {
+    if (!info)
+      return;
+    for (const s of sessions.values()) {
+      if (rangesOverlap(s.target, info)) {
+        showToast("!", "Overlaps the edit already open on " + targetRef(s.target));
+        return;
+      }
+    }
+    const session = createSession(info);
+    sessions.set(session.id, session);
+    syncAgentTargets();
+    applyAgentMeta();
+    syncBoxVisibility();
+    if (chosen() && installed().some((h) => h.name === chosen())) {
+      showCompose(session);
+    } else {
+      showPicker(session);
+    }
+  }
+  function syncAgentTargets() {
+    S2.agentTargets = [...sessions.values()].map((s) => ({
+      id: s.id,
+      path: s.target.path,
+      l1: s.target.l1,
+      l2: s.target.l2
+    }));
+    render();
+    syncDiffAgentTargets();
+  }
+  function createSession(info) {
+    const el = tpl.content.firstElementChild.cloneNode(true);
+    const parent = listEl2 || box;
+    const existing = [...parent.children];
+    let inserted = false;
+    for (const child of existing) {
+      const s = [...sessions.values()].find((sess) => sess.el === child);
+      if (s && s.target) {
+        if (s.target.path === info.path && s.target.l1 > info.l1) {
+          parent.insertBefore(el, child);
+          inserted = true;
+          break;
+        }
+      }
+    }
+    if (!inserted) {
+      parent.appendChild(el);
+    }
+    const session = {
+      id: ++agentSeq,
+      target: info,
+      timer: null,
+      jobId: null,
+      harness: "",
+      el,
+      refEl: el.querySelector(".agent-ref"),
+      metaEl: el.querySelector(".agent-meta"),
+      harnessSelect: el.querySelector(".agent-harness-select"),
+      modelSelect: el.querySelector(".agent-model-select"),
+      closeBtn: el.querySelector(".agent-close"),
+      pickEl: el.querySelector(".agent-pick"),
+      composeEl: el.querySelector(".agent-compose"),
+      input: el.querySelector(".agent-input"),
+      sendBtn: el.querySelector(".agent-send"),
+      cancelBtn: el.querySelector(".agent-cancel"),
+      hintEl: el.querySelector(".agent-hint"),
+      errEl: el.querySelector(".agent-err")
+    };
+    wireSession(session);
+    refreshRef(session);
+    setBusy(session, false);
+    resetHint(session);
+    clearErr(session);
+    session.input.value = "";
+    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    session.input.focus();
+    return session;
+  }
+  function wireSession(session) {
+    session.sendBtn.addEventListener("click", () => submit(session));
+    session.cancelBtn?.addEventListener("click", () => cancelSession(session));
+    session.closeBtn.addEventListener("click", () => closeAgentEdit(session));
+    if (session.refEl) {
+      session.refEl.addEventListener("click", () => {
+        openFile(session.target.path, { line: session.target.l1 });
+      });
+    }
+    if (session.harnessSelect) {
+      session.harnessSelect.addEventListener("change", async () => {
+        const hName = session.harnessSelect.value;
+        if (!hName)
+          return;
+        await select(hName, (msg) => showErr(session, msg));
+        session.input.focus();
+      });
+    }
+    if (session.modelSelect) {
+      session.modelSelect.addEventListener("change", async () => {
+        const hName = session.harnessSelect?.value || chosen();
+        const mName = session.modelSelect.value;
+        await select(hName, mName, (msg) => showErr(session, msg));
+        session.input.focus();
+      });
+    }
+    session.el.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        if (session.timer || session.jobId) {
+          cancelSession(session);
+        } else {
+          closeAgentEdit(session);
+        }
+      } else if ((e[MOD] || e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        submitBatch();
+      } else if (e.key === "Enter" && !e.shiftKey && !session.composeEl.hidden && !session.timer && !session.jobId) {
+        e.preventDefault();
+        submit(session);
+      }
+    });
+  }
+  async function cancelSession(session) {
+    if (!session.timer && !session.jobId)
+      return;
+    if (session.timer) {
+      clearTimeout(session.timer);
+      session.timer = null;
+    }
+    const jobId = session.jobId;
+    session.jobId = null;
+    setBusy(session, false);
+    resetHint(session);
+    syncBatchBar();
+    refreshStatusNote();
+    showToast("!", "Cancelled edit on " + targetRef(session.target));
+    if (jobId) {
+      try {
+        await apiPost("/api/agent/cancel", { id: jobId });
+      } catch {}
+    }
+    session.input.focus();
+  }
+  function closeAgentEdit(session) {
+    if (session.timer || session.jobId) {
+      cancelSession(session);
+    }
+    sessions.delete(session.id);
+    session.el.remove();
+    syncBoxVisibility();
+    syncAgentTargets();
+  }
+  function refreshRef(session) {
+    const ref = targetRef(session.target);
+    session.refEl.textContent = ref;
+    session.refEl.title = ref + " (click to jump)";
+  }
+  function clearErr(session) {
+    const errEl = session.errEl;
+    if (!errEl)
+      return;
+    errEl.textContent = "";
+    errEl.hidden = true;
+  }
+  function showErr(session, msg, streams = []) {
+    const errEl = session.errEl;
+    if (!errEl)
+      return;
+    errEl.textContent = "";
+    const head = document.createElement("div");
+    head.className = "agent-err-msg";
+    head.textContent = msg;
+    errEl.appendChild(head);
+    for (const [label, text] of streams) {
+      if (!text)
+        continue;
+      const name = document.createElement("div");
+      name.className = "agent-err-label";
+      name.textContent = label;
+      const pre = document.createElement("pre");
+      pre.className = "agent-err-out";
+      pre.textContent = text;
+      errEl.append(name, pre);
+    }
+    errEl.hidden = false;
+  }
+  function resetHint(session) {
+    if (!session.hintEl)
+      return;
+    session.hintEl.textContent = "Enter to send, " + keyLabel("Mod+Enter") + " all, Esc to cancel";
+  }
+  function setBusy(session, busy, msg) {
+    session.el.classList.toggle("busy", busy);
+    session.input.disabled = busy;
+    if (session.sendBtn)
+      session.sendBtn.hidden = busy;
+    if (session.cancelBtn)
+      session.cancelBtn.hidden = !busy;
+    session.closeBtn.disabled = false;
+    if (session.harnessSelect)
+      session.harnessSelect.disabled = busy || !!(S2.meta && S2.meta.agentPinned);
+    if (session.modelSelect)
+      session.modelSelect.disabled = busy;
+    if (session.hintEl && msg)
+      session.hintEl.textContent = msg;
+  }
+  function showCompose(session) {
+    session.pickEl.hidden = true;
+    if (session.metaEl)
+      session.metaEl.hidden = false;
+    session.composeEl.hidden = false;
+    session.input.focus();
+  }
+  async function showPicker(session) {
+    session.composeEl.hidden = true;
+    if (session.metaEl)
+      session.metaEl.hidden = true;
+    session.pickEl.hidden = false;
+    session.pickEl.innerHTML = '<div class="hint">Looking for coding harnesses…</div>';
+    let list = S2.meta?.agents || [];
+    let settingsPath = "";
+    try {
+      const j = await api("/api/agent/harnesses");
+      list = j.harnesses || [];
+      settingsPath = j.settings || "";
+      S2.meta.agents = list;
+      S2.meta.agent = j.selected || "";
+      S2.meta.agentModel = j.model || "";
+      S2.meta.agentPinned = !!j.pinned;
+    } catch (e) {
+      session.pickEl.innerHTML = '<div class="hint">Could not look for harnesses: ' + esc2(e.message) + "</div>";
+      return;
+    }
+    const ready = list.filter((h) => h.installed);
+    if (!ready.length) {
+      showToast("!", "Could not find any coding harness like Claude Code, OpenCode, Codex, Antigravity, Aider, etc. Install one and restart px0.", 6000);
+      session.pickEl.innerHTML = '<div class="hint" style="line-height: 1.5; padding: 4px 2px;">' + "Could not find any coding harness like <b>Claude Code</b>, <b>OpenCode</b>, <b>Codex</b>, <b>Antigravity</b> (<code>agy</code>), <b>Aider</b>, <b>Goose</b>, <b>Gemini CLI</b>, or <b>Cursor Agent</b>.<br><br>" + "Please install a coding harness, make sure it is on your <code>PATH</code>, and restart px0 after that.</div>";
+      return;
+    }
+    session.pickEl.innerHTML = '<div class="hint">This harness will edit files in this workspace.</div>' + optionsHtml(ready, settingsPath);
+    session.pickEl.querySelectorAll("[data-pick]").forEach((b) => {
+      b.addEventListener("click", () => pick(session, b.dataset.pick));
+    });
+    session.pickEl.querySelectorAll(".agent-model-select").forEach((sel) => {
+      sel.addEventListener("change", async (e) => {
+        e.stopPropagation();
+        await select(sel.dataset.harness, sel.value, (msg) => showErr(session, msg));
+        showPicker(session);
+      });
+    });
+  }
+  function optionsHtml(ready, settingsPath) {
+    let html = "";
+    for (const h of ready) {
+      const isSelected = h.name === chosen();
+      html += '<div class="agent-opt-wrap">' + '<button class="agent-opt' + (isSelected ? " on" : "") + '" data-pick="' + esc2(h.name) + '">' + '<span class="agent-opt-name">' + esc2(h.name) + "</span>" + '<code class="agent-opt-cmd">' + esc2(h.cmd) + "</code></button>";
+      if (isSelected && h.models && h.models.length > 0) {
+        html += '<div class="agent-model-row">' + '<span class="agent-model-label">Model:</span>' + '<select class="agent-model-select" data-harness="' + esc2(h.name) + '">';
+        for (const m of h.models) {
+          const sel = m === (h.model || chosenModel()) ? " selected" : "";
+          html += '<option value="' + esc2(m) + '"' + sel + ">" + esc2(m) + "</option>";
+        }
+        html += "</select></div>";
+      }
+      html += "</div>";
+    }
+    if (settingsPath)
+      html += '<div class="agent-note">Remembered in ' + esc2(settingsPath) + "</div>";
+    return html;
+  }
+  async function pick(session, name) {
+    if (await select(name, (msg) => showErr(session, msg)))
+      showCompose(session);
+  }
+  async function select(name, model, onError) {
+    if (typeof model === "function") {
+      onError = model;
+      model = "";
+    }
+    try {
+      const params = { name };
+      if (model)
+        params.model = model;
+      const j = await apiPost("/api/agent/select", params);
+      S2.meta.agent = j.selected || "";
+      S2.meta.agentModel = j.model || "";
+      S2.meta.agents = j.harnesses || S2.meta.agents;
+      S2.meta.agentPinned = !!j.pinned;
+    } catch (e) {
+      if (onError)
+        onError(e.message);
+      return false;
+    }
+    applyAgentMeta();
+    return true;
+  }
+  async function submit(session) {
+    if (session.timer)
+      return;
+    clearErr(session);
+    const instruction = session.input.value.trim();
+    if (!instruction || !session.target)
+      return;
+    const params = { path: session.target.path, l1: session.target.l1, l2: session.target.l2, instruction };
+    let job2;
+    try {
+      job2 = await apiPost("/api/agent/edit", params);
+    } catch (e) {
+      showErr(session, e.message);
+      return;
+    }
+    session.jobId = job2.id;
+    session.harness = job2.harness;
+    hideSelectionBar();
+    const initialNote = "Editing with " + (chosenModel() ? chosen() + " (" + chosenModel() + ")" : chosen()) + "...";
+    setBusy(session, true, initialNote);
+    syncBatchBar();
+    refreshStatusNote();
+    session.timer = setTimeout(() => tick(session), 400);
+  }
+  async function tick(session) {
+    if (!session.jobId)
+      return;
+    let j;
+    try {
+      j = await api("/api/agent/job?id=" + session.jobId);
+    } catch (e) {
+      if (!session.jobId)
+        return;
+      session.timer = null;
+      if (e.body && "running" in e.body) {
+        await finish(session, e.body);
+        refreshStatusNote();
+        return;
+      }
+      setBusy(session, false);
+      resetHint(session);
+      syncBatchBar();
+      refreshStatusNote();
+      showErr(session, e.message);
+      return;
+    }
+    if (!session.jobId)
+      return;
+    if (j.running) {
+      session.harness = j.harness;
+      session.elapsed = Math.round((j.ms || 0) / 1000) + "s";
+      setBusy(session, true, "Editing with " + j.harness + "... " + session.elapsed);
+      refreshStatusNote();
+      session.timer = setTimeout(() => tick(session), 600);
+      return;
+    }
+    session.timer = null;
+    await finish(session, j);
+    refreshStatusNote();
+  }
+  function setBatchBusy(busy, msg) {
+    if (!batchBar)
+      return;
+    batchBar.classList.toggle("busy", busy);
+    if (batchApply)
+      batchApply.hidden = busy;
+    if (batchCancel)
+      batchCancel.hidden = !busy;
+    if (batchClear)
+      batchClear.disabled = busy;
+    if (batchHarness)
+      batchHarness.disabled = busy || !!(S2.meta && S2.meta.agentPinned);
+    if (batchModel)
+      batchModel.disabled = busy;
+    if (batchHint) {
+      if (msg)
+        batchHint.textContent = msg;
+      else
+        batchHint.textContent = keyLabel("Mod+Enter") + " to apply all";
+    }
+  }
+  function clearBatchErr() {
+    if (!batchErr)
+      return;
+    batchErr.textContent = "";
+    batchErr.hidden = true;
+  }
+  function showBatchErr(msg, streams = []) {
+    if (!batchErr)
+      return;
+    batchErr.textContent = "";
+    const head = document.createElement("div");
+    head.className = "agent-err-msg";
+    head.textContent = msg;
+    batchErr.appendChild(head);
+    for (const [label, text] of streams) {
+      if (!text)
+        continue;
+      const name = document.createElement("div");
+      name.className = "agent-err-label";
+      name.textContent = label;
+      const pre = document.createElement("pre");
+      pre.className = "agent-err-out";
+      pre.textContent = text;
+      batchErr.append(name, pre);
+    }
+    batchErr.hidden = false;
+  }
+  async function submitBatch() {
+    if (batchTimer || batchJobId)
+      return;
+    clearBatchErr();
+    const ready = getReadySessions();
+    const targets = [];
+    for (const s of ready) {
+      const ins = s.input.value.trim();
+      if (ins && s.target) {
+        targets.push({ session: s, item: { path: s.target.path, l1: s.target.l1, l2: s.target.l2, instruction: ins } });
+      }
+    }
+    if (!targets.length) {
+      if (ready.length > 0) {
+        showToast("!", "Please enter an instruction for the remaining comment(s)");
+        ready[0].input.focus();
+      } else {
+        showToast("!", "All open edits are already in progress");
+      }
+      return;
+    }
+    if (targets.length === 1) {
+      submit(targets[0].session);
+      return;
+    }
+    const harnessName = chosen();
+    if (!harnessName) {
+      showToast("!", "Please select a coding harness first");
+      return;
+    }
+    let job2;
+    try {
+      job2 = await apiPostJson("/api/agent/batch", { edits: targets.map((t) => t.item) });
+    } catch (e) {
+      showBatchErr(e.message);
+      return;
+    }
+    batchJobId = job2.id;
+    activeBatchTargets = targets;
+    batchElapsed = "";
+    hideSelectionBar();
+    const initialNote = "Batch editing " + targets.length + " items with " + (chosenModel() ? chosen() + " (" + chosenModel() + ")" : chosen()) + "...";
+    setBatchBusy(true, initialNote);
+    for (const t of targets) {
+      setBusy(t.session, true, "Applying in batch...");
+    }
+    syncBatchBar();
+    refreshStatusNote();
+    batchTimer = setTimeout(() => tickBatch(targets), 400);
+  }
+  async function tickBatch(targets) {
+    if (!batchJobId)
+      return;
+    let j;
+    try {
+      j = await api("/api/agent/job?id=" + batchJobId);
+    } catch (e) {
+      if (!batchJobId)
+        return;
+      batchTimer = null;
+      if (e.body && "running" in e.body) {
+        await finishBatch(targets, e.body);
+        refreshStatusNote();
+        return;
+      }
+      setBatchBusy(false);
+      for (const t of targets) {
+        setBusy(t.session, false);
+        resetHint(t.session);
+      }
+      syncBatchBar();
+      refreshStatusNote();
+      showBatchErr(e.message);
+      return;
+    }
+    if (!batchJobId)
+      return;
+    if (j.running) {
+      batchElapsed = Math.round((j.ms || 0) / 1000) + "s";
+      setBatchBusy(true, "Applying " + targets.length + " edits with " + j.harness + "... " + batchElapsed);
+      refreshStatusNote();
+      batchTimer = setTimeout(() => tickBatch(targets), 600);
+      return;
+    }
+    batchTimer = null;
+    await finishBatch(targets, j);
+    refreshStatusNote();
+  }
+  async function finishBatch(targets, j) {
+    const currentTargets = targets;
+    batchJobId = null;
+    batchElapsed = "";
+    activeBatchTargets = null;
+    setBatchBusy(false);
+    if (j.error) {
+      for (const t of currentTargets) {
+        setBusy(t.session, false);
+        resetHint(t.session);
+      }
+      syncBatchBar();
+      showBatchErr((j.harness || "agent") + ": " + j.error, [
+        ["stderr", (j.stderr || "").trim()],
+        ["stdout", (j.stdout || j.log || "").trim()]
+      ]);
+      if (j.changed?.length)
+        reloadWorkspace(null);
+      return;
+    }
+    for (const t of currentTargets) {
+      sessions.delete(t.session.id);
+      t.session.el.remove();
+    }
+    syncBoxVisibility();
+    syncAgentTargets();
+    const changed = j.changed || [];
+    if (!changed.length && j.tracked !== false) {
+      showToast("✓", "Finished batch edit with no file changes");
+      return;
+    }
+    const focusTarget = currentTargets[0]?.session?.target;
+    if (!await reloadWorkspace(focusTarget, "Batch edited"))
+      return;
+    showToast("✓", !changed.length ? "Reloaded workspace" : changed.length === 1 ? "Updated " + changed[0] + " (" + currentTargets.length + " edits)" : "Updated " + changed.length + " files across " + currentTargets.length + " edits");
+  }
+  async function cancelBatch() {
+    if (!batchTimer && !batchJobId)
+      return;
+    if (batchTimer) {
+      clearTimeout(batchTimer);
+      batchTimer = null;
+    }
+    const id = batchJobId;
+    batchJobId = null;
+    batchElapsed = "";
+    setBatchBusy(false);
+    if (activeBatchTargets) {
+      for (const t of activeBatchTargets) {
+        setBusy(t.session, false);
+        resetHint(t.session);
+      }
+    }
+    activeBatchTargets = null;
+    syncBatchBar();
+    refreshStatusNote();
+    showToast("!", "Cancelled batch edit");
+    if (id) {
+      try {
+        await apiPost("/api/agent/cancel", { id });
+      } catch {}
+    }
+  }
+  function clearAllEdits() {
+    if (batchJobId)
+      cancelBatch();
+    for (const s of [...sessions.values()]) {
+      closeAgentEdit(s);
+    }
+  }
+  function refreshStatusNote() {
+    const busySessions = [...sessions.values()].filter((s) => s.timer || s.jobId);
+    const batchCount2 = batchJobId ? activeBatchTargets?.length || 0 : 0;
+    const individualBusy = busySessions.filter((s) => !activeBatchTargets?.some((t) => t.session === s));
+    if (batchJobId && individualBusy.length > 0) {
+      setStatusNote("Batch editing " + batchCount2 + " items + " + individualBusy.length + " edit running... " + (batchElapsed || ""));
+    } else if (batchJobId) {
+      setStatusNote("Batch editing " + batchCount2 + " items with " + chosen() + "... " + (batchElapsed || ""));
+    } else if (!individualBusy.length) {
+      setStatusNote("");
+    } else if (individualBusy.length === 1) {
+      const s = individualBusy[0];
+      setStatusNote("Editing with " + (s.harness || chosen()) + "... " + (s.elapsed || ""));
+    } else {
+      setStatusNote(individualBusy.length + " edits running...");
+    }
+  }
+  async function finish(session, j) {
+    const editTarget = session.target;
+    if (j.error) {
+      setBusy(session, false);
+      resetHint(session);
+      showErr(session, (j.harness || "agent") + ": " + j.error, [
+        ["stderr", (j.stderr || "").trim()],
+        ["stdout", (j.stdout || j.log || "").trim()]
+      ]);
+      if (j.changed?.length)
+        reloadWorkspace(null);
+      return;
+    }
+    sessions.delete(session.id);
+    session.el.remove();
+    syncBoxVisibility();
+    syncAgentTargets();
+    const changed = j.changed || [];
+    if (!changed.length && j.tracked !== false) {
+      showToast("✓", "Finished with no file changes");
+      return;
+    }
+    if (!await reloadWorkspace(editTarget, "Edited"))
+      return;
+    showToast("✓", !changed.length ? "Reloaded the workspace" : changed.length === 1 ? "Updated " + changed[0] : "Updated " + changed.length + " files");
+  }
+  var reloadChain = Promise.resolve();
+  function reloadWorkspace(focus, what = "Changed") {
+    const run = async () => {
+      try {
+        await api("/api/reindex");
+        await reloadOpenTabs();
+        if (focus?.path) {
+          await openFile(focus.path, { line: focus.l1, push: false });
+        }
+        await refreshTree();
+      } catch (e) {
+        showToast("!", what + ", but the reload failed: " + e.message);
+        return false;
+      }
+      return true;
+    };
+    const result = reloadChain.then(run, run);
+    reloadChain = result.then(() => {}, () => {});
+    return result;
+  }
+  function initAgent() {
+    if (!box || !tpl)
+      return;
+    setAgentHandler(openAgentEdit);
+    if (batchApply)
+      batchApply.addEventListener("click", () => submitBatch());
+    if (batchCancel)
+      batchCancel.addEventListener("click", () => cancelBatch());
+    if (batchClear)
+      batchClear.addEventListener("click", () => clearAllEdits());
+    if (batchHarness) {
+      batchHarness.addEventListener("change", async () => {
+        const hName = batchHarness.value;
+        if (!hName)
+          return;
+        await select(hName, (msg) => showBatchErr(msg));
+      });
+    }
+    if (batchModel) {
+      batchModel.addEventListener("change", async () => {
+        const hName = batchHarness?.value || chosen();
+        const mName = batchModel.value;
+        await select(hName, mName, (msg) => showBatchErr(msg));
+      });
+    }
+    document.addEventListener("click", (e) => {
+      const row = e.target.closest(".row.agent-sel, .row.agent-anchor, .diff-row.agent-sel, .diff-row.agent-anchor, .diff-side.agent-sel, .diff-side.agent-anchor");
+      if (!row)
+        return;
+      const line = +row.dataset.l;
+      const d = S2.docs[S2.active];
+      if (!d)
+        return;
+      for (const s of sessions.values()) {
+        if (s.target.path === d.path && line >= s.target.l1 && line <= s.target.l2) {
+          s.input.focus();
+          s.el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          break;
+        }
+      }
+    });
+    addEventListener("beforeunload", (e) => {
+      if (!anyInFlight())
+        return;
+      e.preventDefault();
+      e.returnValue = "";
+    });
+  }
+
   // web/src/shortcuts.js
   var SHORTCUTS = [
     [["Mod+,"], "Open settings"],
@@ -5759,6 +6729,7 @@
     [["Mod+Shift+P"], "Command palette"],
     [["Mod+Shift+O"], "Go to symbol"],
     [["Mod+Shift+F"], "Search in files"],
+    [["Mod+Shift+R"], "Refresh workspace"],
     [["Mod+F"], "Find in file"],
     [["Mod+G"], "Go to line"],
     [["Mod+D"], "Toggle diff view (git)"],
@@ -5918,6 +6889,11 @@
         $("#q")?.select();
         return;
       }
+      if (mod && e.shiftKey && (e.key === "R" || e.key === "r")) {
+        e.preventDefault();
+        reindexWorkspace();
+        return;
+      }
       if (mod && !e.shiftKey && (e.key === "p" || e.key === "P")) {
         e.preventDefault();
         openPalette("file");
@@ -6006,6 +6982,14 @@
         e.preventDefault();
         togglePreview();
         return;
+      }
+      if (mod && !e.shiftKey && !e.altKey && e.key === "Enter") {
+        const b = $("#agentbox");
+        if (b && !b.hidden) {
+          e.preventDefault();
+          submitBatch();
+          return;
+        }
       }
       if (inField(document.activeElement))
         return;
@@ -6363,485 +7347,6 @@
     });
   }
 
-  // web/src/agent.js
-  var box = $("#agentbox");
-  var tpl = $("#agentbox-tpl");
-  var sessions = new Map;
-  var agentSeq = 0;
-  var installed = () => (S2.meta?.agents || []).filter((h) => h.installed);
-  var chosen = () => S2.meta && S2.meta.agent || "";
-  var chosenModel = () => S2.meta && S2.meta.agentModel || "";
-  var targetRef = ({ path, l1, l2 }) => path + ":" + (l1 === l2 ? l1 : l1 + "-" + l2);
-  var rangesOverlap = (a, b) => a.path === b.path && a.l1 <= b.l2 && b.l1 <= a.l2;
-  function applyAgentMeta() {
-    for (const session of sessions.values()) {
-      updateSessionMeta(session);
-    }
-  }
-  function updateSessionMeta(session) {
-    if (!session.harnessSelect || !session.modelSelect)
-      return;
-    const ready = (S2.meta?.agents || []).filter((h) => h.installed);
-    const currentHarness = chosen();
-    const currentModel = chosenModel();
-    session.harnessSelect.innerHTML = "";
-    if (!ready.length) {
-      const opt = document.createElement("option");
-      opt.value = "";
-      opt.textContent = "no harness";
-      session.harnessSelect.appendChild(opt);
-      session.harnessSelect.disabled = true;
-      session.modelSelect.innerHTML = "";
-      session.modelSelect.hidden = true;
-      return;
-    }
-    for (const h of ready) {
-      const opt = document.createElement("option");
-      opt.value = h.name;
-      opt.textContent = h.name;
-      if (h.name === currentHarness)
-        opt.selected = true;
-      session.harnessSelect.appendChild(opt);
-    }
-    const isBusy = session.el.classList.contains("busy");
-    session.harnessSelect.disabled = isBusy || !!(S2.meta && S2.meta.agentPinned);
-    session.harnessSelect.title = S2.meta && S2.meta.agentPinned ? "Fixed for this run by -agent" : "Change the coding harness";
-    const activeH = ready.find((h) => h.name === (session.harnessSelect.value || currentHarness)) || ready[0];
-    session.modelSelect.innerHTML = "";
-    const models = activeH?.models || [];
-    if (models.length > 0) {
-      for (const m of models) {
-        const opt = document.createElement("option");
-        opt.value = m;
-        opt.textContent = m;
-        if (m === currentModel)
-          opt.selected = true;
-        session.modelSelect.appendChild(opt);
-      }
-      session.modelSelect.hidden = false;
-      session.modelSelect.disabled = isBusy;
-      session.modelSelect.title = "Model for " + activeH.name;
-    } else {
-      session.modelSelect.hidden = true;
-    }
-  }
-  async function loadAgentAsync() {
-    try {
-      const j = await api("/api/agent/harnesses");
-      S2.meta.agents = j.harnesses || [];
-      S2.meta.agent = j.selected || S2.meta.agent || "";
-      S2.meta.agentModel = j.model || S2.meta.agentModel || "";
-      S2.meta.agentPinned = !!j.pinned;
-      applyAgentMeta();
-    } catch {}
-  }
-  function anyInFlight() {
-    for (const s of sessions.values())
-      if (s.timer)
-        return true;
-    return false;
-  }
-  function syncBoxVisibility() {
-    box.hidden = sessions.size === 0;
-  }
-  function openAgentEdit(info) {
-    if (!info)
-      return;
-    for (const s of sessions.values()) {
-      if (rangesOverlap(s.target, info)) {
-        showToast("!", "Overlaps the edit already open on " + targetRef(s.target));
-        return;
-      }
-    }
-    const session = createSession(info);
-    sessions.set(session.id, session);
-    syncAgentTargets();
-    applyAgentMeta();
-    syncBoxVisibility();
-    if (chosen() && installed().some((h) => h.name === chosen())) {
-      showCompose(session);
-    } else {
-      showPicker(session);
-    }
-  }
-  function syncAgentTargets() {
-    S2.agentTargets = [...sessions.values()].map((s) => ({
-      id: s.id,
-      path: s.target.path,
-      l1: s.target.l1,
-      l2: s.target.l2
-    }));
-    render();
-    syncDiffAgentTargets();
-  }
-  function createSession(info) {
-    const el = tpl.content.firstElementChild.cloneNode(true);
-    box.prepend(el);
-    const session = {
-      id: ++agentSeq,
-      target: info,
-      timer: null,
-      jobId: null,
-      harness: "",
-      el,
-      refEl: el.querySelector(".agent-ref"),
-      metaEl: el.querySelector(".agent-meta"),
-      harnessSelect: el.querySelector(".agent-harness-select"),
-      modelSelect: el.querySelector(".agent-model-select"),
-      closeBtn: el.querySelector(".agent-close"),
-      pickEl: el.querySelector(".agent-pick"),
-      composeEl: el.querySelector(".agent-compose"),
-      input: el.querySelector(".agent-input"),
-      sendBtn: el.querySelector(".agent-send"),
-      cancelBtn: el.querySelector(".agent-cancel"),
-      hintEl: el.querySelector(".agent-hint"),
-      errEl: el.querySelector(".agent-err")
-    };
-    wireSession(session);
-    refreshRef(session);
-    setBusy(session, false);
-    resetHint(session);
-    clearErr(session);
-    session.input.value = "";
-    session.input.focus();
-    return session;
-  }
-  function wireSession(session) {
-    session.sendBtn.addEventListener("click", () => submit(session));
-    session.cancelBtn?.addEventListener("click", () => cancelSession(session));
-    session.closeBtn.addEventListener("click", () => closeAgentEdit(session));
-    if (session.harnessSelect) {
-      session.harnessSelect.addEventListener("change", async () => {
-        const hName = session.harnessSelect.value;
-        if (!hName)
-          return;
-        await select(hName, (msg) => showErr(session, msg));
-        session.input.focus();
-      });
-    }
-    if (session.modelSelect) {
-      session.modelSelect.addEventListener("change", async () => {
-        const hName = session.harnessSelect?.value || chosen();
-        const mName = session.modelSelect.value;
-        await select(hName, mName, (msg) => showErr(session, msg));
-        session.input.focus();
-      });
-    }
-    session.el.addEventListener("keydown", (e) => {
-      e.stopPropagation();
-      if (e.key === "Escape") {
-        e.preventDefault();
-        if (session.timer || session.jobId) {
-          cancelSession(session);
-        } else {
-          closeAgentEdit(session);
-        }
-      } else if (e.key === "Enter" && !e.shiftKey && !session.composeEl.hidden && !session.timer) {
-        e.preventDefault();
-        submit(session);
-      }
-    });
-  }
-  async function cancelSession(session) {
-    if (!session.timer && !session.jobId)
-      return;
-    if (session.timer) {
-      clearTimeout(session.timer);
-      session.timer = null;
-    }
-    const jobId = session.jobId;
-    session.jobId = null;
-    setBusy(session, false);
-    resetHint(session);
-    refreshStatusNote();
-    showToast("!", "Cancelled edit on " + targetRef(session.target));
-    if (jobId) {
-      try {
-        await apiPost("/api/agent/cancel", { id: jobId });
-      } catch {}
-    }
-    session.input.focus();
-  }
-  function closeAgentEdit(session) {
-    if (session.timer || session.jobId) {
-      cancelSession(session);
-    }
-    sessions.delete(session.id);
-    session.el.remove();
-    syncBoxVisibility();
-    syncAgentTargets();
-  }
-  function refreshRef(session) {
-    const ref = targetRef(session.target);
-    session.refEl.textContent = ref;
-    session.refEl.title = ref;
-  }
-  function clearErr(session) {
-    const errEl = session.errEl;
-    if (!errEl)
-      return;
-    errEl.textContent = "";
-    errEl.hidden = true;
-  }
-  function showErr(session, msg, streams = []) {
-    const errEl = session.errEl;
-    if (!errEl)
-      return;
-    errEl.textContent = "";
-    const head = document.createElement("div");
-    head.className = "agent-err-msg";
-    head.textContent = msg;
-    errEl.appendChild(head);
-    for (const [label, text] of streams) {
-      if (!text)
-        continue;
-      const name = document.createElement("div");
-      name.className = "agent-err-label";
-      name.textContent = label;
-      const pre = document.createElement("pre");
-      pre.className = "agent-err-out";
-      pre.textContent = text;
-      errEl.append(name, pre);
-    }
-    errEl.hidden = false;
-  }
-  function resetHint(session) {
-    if (!session.hintEl)
-      return;
-    session.hintEl.textContent = "Enter to send, Esc to cancel";
-  }
-  function setBusy(session, busy, msg) {
-    session.el.classList.toggle("busy", busy);
-    session.input.disabled = busy;
-    if (session.sendBtn)
-      session.sendBtn.hidden = busy;
-    if (session.cancelBtn)
-      session.cancelBtn.hidden = !busy;
-    session.closeBtn.disabled = false;
-    if (session.harnessSelect)
-      session.harnessSelect.disabled = busy || !!(S2.meta && S2.meta.agentPinned);
-    if (session.modelSelect)
-      session.modelSelect.disabled = busy;
-    if (session.hintEl && msg)
-      session.hintEl.textContent = msg;
-  }
-  function showCompose(session) {
-    session.pickEl.hidden = true;
-    if (session.metaEl)
-      session.metaEl.hidden = false;
-    session.composeEl.hidden = false;
-    session.input.focus();
-  }
-  async function showPicker(session) {
-    session.composeEl.hidden = true;
-    if (session.metaEl)
-      session.metaEl.hidden = true;
-    session.pickEl.hidden = false;
-    session.pickEl.innerHTML = '<div class="hint">Looking for coding harnesses…</div>';
-    let list = S2.meta?.agents || [];
-    let settingsPath = "";
-    try {
-      const j = await api("/api/agent/harnesses");
-      list = j.harnesses || [];
-      settingsPath = j.settings || "";
-      S2.meta.agents = list;
-      S2.meta.agent = j.selected || "";
-      S2.meta.agentModel = j.model || "";
-      S2.meta.agentPinned = !!j.pinned;
-    } catch (e) {
-      session.pickEl.innerHTML = '<div class="hint">Could not look for harnesses: ' + esc2(e.message) + "</div>";
-      return;
-    }
-    const ready = list.filter((h) => h.installed);
-    if (!ready.length) {
-      showToast("!", "Could not find any coding harness like Claude Code, OpenCode, Codex, Antigravity, Aider, etc. Install one and restart px0.", 6000);
-      session.pickEl.innerHTML = '<div class="hint" style="line-height: 1.5; padding: 4px 2px;">' + "Could not find any coding harness like <b>Claude Code</b>, <b>OpenCode</b>, <b>Codex</b>, <b>Antigravity</b> (<code>agy</code>), <b>Aider</b>, <b>Goose</b>, <b>Gemini CLI</b>, or <b>Cursor Agent</b>.<br><br>" + "Please install a coding harness, make sure it is on your <code>PATH</code>, and restart px0 after that.</div>";
-      return;
-    }
-    session.pickEl.innerHTML = '<div class="hint">This harness will edit files in this workspace.</div>' + optionsHtml(ready, settingsPath);
-    session.pickEl.querySelectorAll("[data-pick]").forEach((b) => {
-      b.addEventListener("click", () => pick(session, b.dataset.pick));
-    });
-    session.pickEl.querySelectorAll(".agent-model-select").forEach((sel) => {
-      sel.addEventListener("change", async (e) => {
-        e.stopPropagation();
-        await select(sel.dataset.harness, sel.value, (msg) => showErr(session, msg));
-        showPicker(session);
-      });
-    });
-  }
-  function optionsHtml(ready, settingsPath) {
-    let html = "";
-    for (const h of ready) {
-      const isSelected = h.name === chosen();
-      html += '<div class="agent-opt-wrap">' + '<button class="agent-opt' + (isSelected ? " on" : "") + '" data-pick="' + esc2(h.name) + '">' + '<span class="agent-opt-name">' + esc2(h.name) + "</span>" + '<code class="agent-opt-cmd">' + esc2(h.cmd) + "</code></button>";
-      if (isSelected && h.models && h.models.length > 0) {
-        html += '<div class="agent-model-row">' + '<span class="agent-model-label">Model:</span>' + '<select class="agent-model-select" data-harness="' + esc2(h.name) + '">';
-        for (const m of h.models) {
-          const sel = m === (h.model || chosenModel()) ? " selected" : "";
-          html += '<option value="' + esc2(m) + '"' + sel + ">" + esc2(m) + "</option>";
-        }
-        html += "</select></div>";
-      }
-      html += "</div>";
-    }
-    if (settingsPath)
-      html += '<div class="agent-note">Remembered in ' + esc2(settingsPath) + "</div>";
-    return html;
-  }
-  async function pick(session, name) {
-    if (await select(name, (msg) => showErr(session, msg)))
-      showCompose(session);
-  }
-  async function select(name, model, onError) {
-    if (typeof model === "function") {
-      onError = model;
-      model = "";
-    }
-    try {
-      const params = { name };
-      if (model)
-        params.model = model;
-      const j = await apiPost("/api/agent/select", params);
-      S2.meta.agent = j.selected || "";
-      S2.meta.agentModel = j.model || "";
-      S2.meta.agents = j.harnesses || S2.meta.agents;
-      S2.meta.agentPinned = !!j.pinned;
-    } catch (e) {
-      if (onError)
-        onError(e.message);
-      return false;
-    }
-    applyAgentMeta();
-    return true;
-  }
-  async function submit(session) {
-    if (session.timer)
-      return;
-    clearErr(session);
-    const instruction = session.input.value.trim();
-    if (!instruction || !session.target)
-      return;
-    const params = { path: session.target.path, l1: session.target.l1, l2: session.target.l2, instruction };
-    let job2;
-    try {
-      job2 = await apiPost("/api/agent/edit", params);
-    } catch (e) {
-      showErr(session, e.message);
-      return;
-    }
-    session.jobId = job2.id;
-    session.harness = job2.harness;
-    hideSelectionBar();
-    const initialNote = "Editing with " + (chosenModel() ? chosen() + " (" + chosenModel() + ")" : chosen()) + "...";
-    setBusy(session, true, initialNote);
-    refreshStatusNote();
-    session.timer = setTimeout(() => tick(session), 400);
-  }
-  async function tick(session) {
-    if (!session.jobId)
-      return;
-    let j;
-    try {
-      j = await api("/api/agent/job?id=" + session.jobId);
-    } catch (e) {
-      if (!session.jobId)
-        return;
-      session.timer = null;
-      if (e.body && "running" in e.body) {
-        await finish(session, e.body);
-        refreshStatusNote();
-        return;
-      }
-      setBusy(session, false);
-      resetHint(session);
-      refreshStatusNote();
-      showErr(session, e.message);
-      return;
-    }
-    if (!session.jobId)
-      return;
-    if (j.running) {
-      session.harness = j.harness;
-      session.elapsed = Math.round((j.ms || 0) / 1000) + "s";
-      setBusy(session, true, "Editing with " + j.harness + "... " + session.elapsed);
-      refreshStatusNote();
-      session.timer = setTimeout(() => tick(session), 600);
-      return;
-    }
-    session.timer = null;
-    await finish(session, j);
-    refreshStatusNote();
-  }
-  function refreshStatusNote() {
-    const busy = [...sessions.values()].filter((s) => s.timer);
-    if (!busy.length) {
-      setStatusNote("");
-    } else if (busy.length === 1) {
-      const s = busy[0];
-      setStatusNote("Editing with " + (s.harness || chosen()) + "... " + (s.elapsed || ""));
-    } else {
-      setStatusNote(busy.length + " edits running...");
-    }
-  }
-  async function finish(session, j) {
-    const editTarget = session.target;
-    if (j.error) {
-      setBusy(session, false);
-      resetHint(session);
-      showErr(session, (j.harness || "agent") + ": " + j.error, [
-        ["stderr", (j.stderr || "").trim()],
-        ["stdout", (j.stdout || j.log || "").trim()]
-      ]);
-      if (j.changed?.length)
-        reloadWorkspace(null);
-      return;
-    }
-    sessions.delete(session.id);
-    session.el.remove();
-    syncBoxVisibility();
-    syncAgentTargets();
-    const changed = j.changed || [];
-    if (!changed.length && j.tracked !== false) {
-      showToast("✓", "Finished with no file changes");
-      return;
-    }
-    if (!await reloadWorkspace(editTarget, "Edited"))
-      return;
-    showToast("✓", !changed.length ? "Reloaded the workspace" : changed.length === 1 ? "Updated " + changed[0] : "Updated " + changed.length + " files");
-  }
-  var reloadChain = Promise.resolve();
-  function reloadWorkspace(focus, what = "Changed") {
-    const run = async () => {
-      try {
-        await api("/api/reindex");
-        await reloadOpenTabs();
-        if (focus?.path) {
-          await openFile(focus.path, { line: focus.l1, push: false });
-        }
-        await drawTree("", treeEl, 0);
-      } catch (e) {
-        showToast("!", what + ", but the reload failed: " + e.message);
-        return false;
-      }
-      return true;
-    };
-    const result = reloadChain.then(run, run);
-    reloadChain = result.then(() => {}, () => {});
-    return result;
-  }
-  function initAgent() {
-    if (!box || !tpl)
-      return;
-    setAgentHandler(openAgentEdit);
-    addEventListener("beforeunload", (e) => {
-      if (!anyInFlight())
-        return;
-      e.preventDefault();
-      e.returnValue = "";
-    });
-  }
-
   // web/src/main.js
   initRenderer();
   initTabs();
@@ -6896,8 +7401,11 @@
       if (emptyVerEl)
         emptyVerEl.textContent = "v" + S2.meta.version;
     }
-    updateStatus();
-    await drawTree("", treeEl, 0);
+    try {
+      const savedDirs = JSON.parse(sessionStorage.getItem("px0.openDirs") || "[]");
+      restoreOpenDirs(savedDirs);
+    } catch {}
+    await refreshTree();
     const params = new URLSearchParams(window.location.search);
     const initialPath = params.get("path");
     const initialLine = parseInt(params.get("line"), 10) || undefined;
@@ -6912,6 +7420,8 @@
         const cleanUrl = u.pathname + (cleanSearch ? "?" + cleanSearch : "") + u.hash;
         window.history.replaceState({}, "", cleanUrl);
       } catch {}
+    } else {
+      await restoreWorkspaceTabs();
     }
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(() => {

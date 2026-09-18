@@ -160,15 +160,37 @@
         <button id="find-close" title="Close ({Esc})">&#10005;</button>
       </div>
 
-      <!-- Instruction composers: one stacked box per edit in flight or being
-           composed, cloned from #agentbox-tpl. Several can run at once as long
-           as their line ranges do not overlap. -->
-      <div id="agentbox" hidden></div>
+      <!-- Instruction composers: stacked box per edit in flight or being composed.
+           When multiple edits exist, #agent-batch-bar provides unified controls to apply all. -->
+      <div id="agentbox" hidden>
+        <div id="agent-batch-bar" class="agent-batch-bar" hidden>
+          <div class="agent-batch-header">
+            <div class="agent-batch-title-row">
+              <span class="agent-batch-badge">Batch Edit</span>
+              <span id="agent-batch-count" class="agent-batch-count">0 comments</span>
+              <span class="grow"></span>
+              <button id="agent-batch-clear" class="agent-batch-clear" title="Clear all comments">Clear All</button>
+            </div>
+            <div class="agent-batch-meta">
+              <span class="agent-meta-label">Model</span>
+              <select id="agent-batch-harness" class="agent-harness-select" title="Coding harness"></select>
+              <select id="agent-batch-model" class="agent-model-select" title="Model"></select>
+            </div>
+          </div>
+          <div class="agent-batch-actions">
+            <span id="agent-batch-hint" class="agent-hint">Mod+Enter to apply all</span>
+            <button id="agent-batch-cancel" class="agent-cancel" hidden>Cancel</button>
+            <button id="agent-batch-apply" class="agent-send agent-batch-apply" title="Apply all comments ({Mod+Enter})">Apply All</button>
+          </div>
+          <div id="agent-batch-err" class="agent-err" hidden></div>
+        </div>
+        <div id="agentbox-list" class="agentbox-list"></div>
+      </div>
       <template id="agentbox-tpl">
         <div class="agent-box">
           <div class="agent-head">
-            <span class="sel-chip">Edit</span>
-            <span class="agent-ref"></span>
+            <span class="sel-chip">Comment</span>
+            <span class="agent-ref" role="button" tabindex="0" title="Click to jump to code"></span>
             <span class="grow"></span>
             <button class="agent-close" title="Close ({Esc})">&#10005;</button>
           </div>
@@ -180,7 +202,7 @@
           <!-- Shown until a harness has been picked, and whenever one is changed -->
           <div class="agent-pick" hidden></div>
           <div class="agent-compose">
-            <textarea class="agent-input" rows="3" spellcheck="false" autocomplete="off" placeholder="What should change here?"></textarea>
+            <textarea class="agent-input" rows="3" spellcheck="false" autocomplete="off" placeholder="Edit comment / instruction... (Mod+Enter to apply all)"></textarea>
             <div class="agent-err" hidden></div>
             <div class="agent-foot">
               <span class="agent-hint">Enter to send, Esc to cancel</span>

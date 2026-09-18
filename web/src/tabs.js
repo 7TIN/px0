@@ -77,6 +77,7 @@ export async function openFile(path, opts = {}) {
   updateStatus();
   if ($('#panel-outline')?.classList.contains('active')) loadOutline();
   if (push) pushHistory(path, line || d.cur, col);
+  saveWorkspaceState();
 }
 
 // VS Code-style diff gutter for the normal file view. Fetches once per opened
@@ -84,9 +85,10 @@ export async function openFile(path, opts = {}) {
 // Fetches on any open in a git repo rather than threading per-file status
 // through every open path — the backend returns available:false for
 // clean/untracked files, so the extra request is cheap and self-limiting.
-function loadGutter(d) {
+export async function loadGutter(d) {
   if (!S.meta?.git) return;
-  api('/api/gutter', { path: d.path }).then(j => {
+  try {
+    const j = await api('/api/gutter', { path: d.path });
     d.diffAvailable = !!j.available;
     if (j.available && d.diffMode === null && !d.diffDismissed) {
       d.diffMode = layoutPref() || 'split';
@@ -95,14 +97,20 @@ function loadGutter(d) {
         syncPreview();
       }
     }
-    if (doc_() === d) updateStatus();
-    if (!j.available) return;
-    const marks = new Map();
-    for (const n of j.modified) marks.set(n, 'mod');
-    for (const n of j.added) marks.set(n, 'add');
-    d.gutter = { marks, dels: new Set(j.deleted) };
-    if (doc_() === d) render();
-  }).catch(() => {});
+    if (!j.available) {
+      d.gutter = null;
+    } else {
+      const marks = new Map();
+      for (const n of j.modified) marks.set(n, 'mod');
+      for (const n of j.added) marks.set(n, 'add');
+      d.gutter = { marks, dels: new Set(j.deleted) };
+    }
+    if (doc_() === d) {
+      updateStatus();
+      render();
+    }
+    drawTabs();
+  } catch {}
 }
 
 // Quietly re-fetches all open tabs on workspace reindex without tab-switching thrash.
@@ -190,8 +198,10 @@ export async function reloadOpenTabs() {
 
     S.tabs[idx] = d;
     if (j.refine) refineChunk(d, tgt.start / CHUNK);
-    loadGutter(d);
   }
+
+  // Load all gutters concurrently before initial paint
+  await Promise.allSettled(S.tabs.filter(t => !t.isImage).map(t => loadGutter(t)));
 
   const d = doc_();
   if (d) {
@@ -201,7 +211,7 @@ export async function reloadOpenTabs() {
     warmLSP(d);
     syncImageView();
     syncPreview();
-    syncDiffView();
+    syncDiffView(true);
     layout();
     vp.scrollTop = d.scrollTop;
     render();
@@ -211,6 +221,7 @@ export async function reloadOpenTabs() {
   drawTabs();
   drawCrumbs();
   updateStatus();
+  saveWorkspaceState();
 }
 
 export function centerLine(n) {
@@ -247,6 +258,7 @@ export function closeTab(i) {
     rowsEl.innerHTML = ''; sizer.style.height = '0px';
     $('#empty').hidden = false; drawCrumbs();
     drawTabs(); updateStatus();
+    saveWorkspaceState();
     return;
   }
   S.active = Math.min(i, S.tabs.length - 1);
@@ -256,6 +268,7 @@ export function closeTab(i) {
   syncDiffView();
   drawTabs(); drawCrumbs(); layout();
   vp.scrollTop = d.scrollTop; render(); updateStatus();
+  saveWorkspaceState();
 }
 
 // Reopens the most recently closed file that is not open already, where it was left.
@@ -273,9 +286,11 @@ export async function reopenClosedTab() {
 
 export function drawTabs() {
   $('#tabs').innerHTML = S.tabs.map((t, i) =>
-    '<div class="tab' + (i === S.active ? ' active' : '') + (t.isImage ? ' tab-image' : '') + '" data-i="' + i + '" title="' + esc(t.path) + '">' +
+    '<div class="tab' + (i === S.active ? ' active' : '') + (t.isImage ? ' tab-image' : '') + (t.diffAvailable ? ' git-modified' : '') + '" data-i="' + i + '" title="' + esc(t.path) + '">' +
     (t.isImage ? '<svg class="tab-icon" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="5.5" cy="5.5" r="1.5"/><path d="M14 10l-3.5-3.5L3 14"/></svg>' : '') +
-    '<span class="tn">' + esc(t.name) + '</span><span class="x" data-close="' + i + '" title="' + withKeys('Close tab ({Alt+W})') + '"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6"/></svg></span></div>').join('');
+    '<span class="tn">' + esc(t.name) + '</span>' +
+    (t.diffAvailable ? '<span class="tab-git-dot" title="Modified in git">●</span>' : '') +
+    '<span class="x" data-close="' + i + '" title="' + withKeys('Close tab ({Alt+W})') + '"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6"/></svg></span></div>').join('');
   const act = $('#tabs .tab.active');
   if (act) act.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
@@ -301,6 +316,32 @@ export function switchTab(i) {
   render(); updateStatus();
   if ($('#panel-outline')?.classList.contains('active')) loadOutline();
   pushHistory(S.tabs[i].path, S.tabs[i].cur);
+  saveWorkspaceState();
+}
+
+export function saveWorkspaceState() {
+  try {
+    const tabs = S.tabs.map(t => ({ path: t.path, cur: t.cur }));
+    sessionStorage.setItem('px0.tabs', JSON.stringify({ tabs, active: S.active }));
+  } catch {}
+}
+
+export async function restoreWorkspaceTabs() {
+  try {
+    const saved = sessionStorage.getItem('px0.tabs');
+    if (!saved) return false;
+    const { tabs, active } = JSON.parse(saved);
+    if (!Array.isArray(tabs) || tabs.length === 0) return false;
+    for (const t of tabs) {
+      if (t.path) await openFile(t.path, { line: t.cur, push: false });
+    }
+    if (typeof active === 'number' && active >= 0 && active < S.tabs.length) {
+      switchTab(active);
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function drawCrumbs() {

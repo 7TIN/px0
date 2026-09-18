@@ -82,6 +82,7 @@ func NewServer(ix *Index, lsp *lspManager) *Server {
 	s.mux.HandleFunc("/api/agent/harnesses", s.handleAgentHarnesses)
 	s.mux.HandleFunc("/api/agent/select", s.handleAgentSelect)
 	s.mux.HandleFunc("/api/agent/edit", s.handleAgentEdit)
+	s.mux.HandleFunc("/api/agent/batch", s.handleAgentBatchEdit)
 	s.mux.HandleFunc("/api/agent/job", s.handleAgentJob)
 	s.mux.HandleFunc("/api/agent/cancel", s.handleAgentCancel)
 	s.mux.HandleFunc("/api/settings", s.handleSettings)
@@ -766,6 +767,7 @@ func (s *Server) handleDef(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {
+	EvictAll()
 	s.ix.Build()
 	n, _, ms := s.ix.Stats()
 	writeJSON(w, map[string]any{"files": n, "indexMs": ms})

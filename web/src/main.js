@@ -1,11 +1,11 @@
 // web/src/main.js
 import { $, S, api, applyKeyLabels } from './state.js';
 import { measure, layout, render, initRenderer, updateEditorOptionControls } from './renderer.js';
-import { initTabs, openFile } from './tabs.js';
+import { initTabs, openFile, restoreWorkspaceTabs } from './tabs.js';
 import { initCursor } from './cursor.js';
 import { initHover } from './hover.js';
 import { initSelectionBar } from './selbar.js';
-import { drawTree, treeEl, initTree, revealFile } from './tree.js';
+import { drawTree, treeEl, initTree, revealFile, refreshTree, restoreOpenDirs } from './tree.js';
 import { initSearch } from './search.js';
 import { initOutline } from './outline.js';
 import { initPanels } from './panels.js';
@@ -82,8 +82,11 @@ initImageViewer();
     const emptyVerEl = $('#empty-ver');
     if (emptyVerEl) emptyVerEl.textContent = 'v' + S.meta.version;
   }
-  updateStatus();
-  await drawTree('', treeEl, 0);
+  try {
+    const savedDirs = JSON.parse(sessionStorage.getItem('px0.openDirs') || '[]');
+    restoreOpenDirs(savedDirs);
+  } catch {}
+  await refreshTree();
 
   const params = new URLSearchParams(window.location.search);
   const initialPath = params.get('path');
@@ -99,6 +102,8 @@ initImageViewer();
       const cleanUrl = u.pathname + (cleanSearch ? '?' + cleanSearch : '') + u.hash;
       window.history.replaceState({}, '', cleanUrl);
     } catch {}
+  } else {
+    await restoreWorkspaceTabs();
   }
 
   if (document.fonts && document.fonts.ready) {

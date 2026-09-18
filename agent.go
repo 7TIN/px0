@@ -329,26 +329,40 @@ type agentHarness struct {
 	Model     string   `json:"model,omitempty"`
 }
 
+// agentRange anchors a range on a file for overlap checks.
+type agentRange struct {
+	path string
+	l1   int
+	l2   int
+}
+
+// agentBatchItem represents one instruction anchored to a file range.
+type agentBatchItem struct {
+	Abs         string `json:"-"`
+	Path        string `json:"path"`
+	L1          int    `json:"l1"`
+	L2          int    `json:"l2"`
+	Instruction string `json:"instruction"`
+}
+
 // agentJob is one dispatch, snapshot-able while it runs.
 type agentJob struct {
-	ID      int64    `json:"id"`
-	Harness string   `json:"harness"`
-	Path    string   `json:"path"`
-	Lines   string   `json:"lines"`
-	Running bool     `json:"running"`
-	Error   string   `json:"error,omitempty"`
-	Log     string   `json:"log"`
-	Stdout  string   `json:"stdout,omitempty"`
-	Stderr  string   `json:"stderr,omitempty"`
-	Changed []string `json:"changed"`
-	Ms      int64    `json:"ms"`
-	// Tracked is false outside a git repository, where px0 cannot tell which
-	// files a harness touched. An empty Changed then means "unknown", not
-	// "nothing", and the client reloads regardless.
-	Tracked bool `json:"tracked"`
+	ID         int64            `json:"id"`
+	Harness    string           `json:"harness"`
+	Path       string           `json:"path"`
+	Lines      string           `json:"lines"`
+	Running    bool             `json:"running"`
+	Error      string           `json:"error,omitempty"`
+	Log        string           `json:"log"`
+	Stdout     string           `json:"stdout,omitempty"`
+	Stderr     string           `json:"stderr,omitempty"`
+	Changed    []string         `json:"changed"`
+	Ms         int64            `json:"ms"`
+	Tracked    bool             `json:"tracked"`
+	BatchCount int              `json:"batchCount,omitempty"`
+	Items      []agentBatchItem `json:"items,omitempty"`
 
-	// l1/l2 anchor this job for the overlap check in Start; unexported since
-	// Lines already carries the display form.
+	ranges []agentRange
 	l1, l2 int
 	cancel context.CancelFunc
 	out    *tailBuffer
@@ -713,10 +727,16 @@ func (m *agentManager) anyRunningLocked() bool {
 // run at the same time. Callers hold m.mu.
 func (m *agentManager) overlapLocked(rel string, l1, l2 int) bool {
 	for _, j := range m.jobs {
-		if !j.Running || j.Path != rel {
+		if !j.Running {
 			continue
 		}
-		if l1 <= j.l2 && j.l1 <= l2 {
+		if len(j.ranges) > 0 {
+			for _, r := range j.ranges {
+				if r.path == rel && l1 <= r.l2 && r.l1 <= l2 {
+					return true
+				}
+			}
+		} else if j.Path == rel && l1 <= j.l2 && j.l1 <= l2 {
 			return true
 		}
 	}
@@ -726,9 +746,38 @@ func (m *agentManager) overlapLocked(rel string, l1, l2 int) bool {
 // Start dispatches an instruction anchored to abs:l1-l2. It returns as soon as
 // the harness is running.
 func (m *agentManager) Start(abs, rel string, l1, l2 int, instruction string, force bool) (*agentJob, error) {
-	instruction = strings.TrimSpace(instruction)
-	if instruction == "" {
-		return nil, errors.New("instruction is empty")
+	return m.StartBatch([]agentBatchItem{{
+		Abs:         abs,
+		Path:        rel,
+		L1:          l1,
+		L2:          l2,
+		Instruction: instruction,
+	}}, force)
+}
+
+// StartBatch dispatches a batch of instructions anchored to one or more file ranges.
+func (m *agentManager) StartBatch(items []agentBatchItem, force bool) (*agentJob, error) {
+	if len(items) == 0 {
+		return nil, errors.New("no edits specified")
+	}
+
+	for i := range items {
+		items[i].Instruction = strings.TrimSpace(items[i].Instruction)
+		if items[i].Instruction == "" {
+			return nil, errors.New("instruction is empty")
+		}
+		if items[i].L1 < 1 {
+			items[i].L1 = 1
+		}
+		if items[i].L2 < items[i].L1 {
+			items[i].L2 = items[i].L1
+		}
+		for j := 0; j < i; j++ {
+			if items[i].Path == items[j].Path && items[i].L1 <= items[j].L2 && items[j].L1 <= items[i].L2 {
+				uiStatus("warn", "agent", fmt.Sprintf("batch edit refused: overlapping edits on %s (%s and %s)", items[i].Path, lineRef(items[i].L1, items[i].L2), lineRef(items[j].L1, items[j].L2)), 0, os.Stdout)
+				return nil, fmt.Errorf("overlapping edits in batch on %s (%s and %s)", items[i].Path, lineRef(items[i].L1, items[i].L2), lineRef(items[j].L1, items[j].L2))
+			}
+		}
 	}
 
 	m.mu.Lock()
@@ -737,45 +786,87 @@ func (m *agentManager) Start(abs, rel string, l1, l2 int, instruction string, fo
 		uiStatus("err", "agent", "edit dispatch refused: no coding harness selected", 0, os.Stdout)
 		return nil, errAgentNone
 	}
-	if m.overlapLocked(rel, l1, l2) {
-		m.mu.Unlock()
-		uiStatus("warn", "agent", "edit dispatch refused: overlapping edit already running", 0, os.Stdout)
-		return nil, errAgentBusy
+	for _, it := range items {
+		if m.overlapLocked(it.Path, it.L1, it.L2) {
+			m.mu.Unlock()
+			uiStatus("warn", "agent", fmt.Sprintf("edit dispatch refused: overlapping edit already running on %s:%s", it.Path, lineRef(it.L1, it.L2)), 0, os.Stdout)
+			return nil, errAgentBusy
+		}
 	}
 	args := m.args
 	name := m.selected
 	m.mu.Unlock()
 
-	snippet, err := readLineRange(abs, l1, l2)
-	if err != nil {
-		uiStatus("err", "agent", fmt.Sprintf("failed reading snippet for %s:%s: %s", rel, lineRef(l1, l2), err.Error()), 0, os.Stdout)
-		return nil, err
+	prepared := make([]itemWithSnippet, len(items))
+	for i, it := range items {
+		snippet, err := readLineRange(it.Abs, it.L1, it.L2)
+		if err != nil {
+			uiStatus("err", "agent", fmt.Sprintf("failed reading snippet for %s:%s: %s", it.Path, lineRef(it.L1, it.L2), err.Error()), 0, os.Stdout)
+			return nil, err
+		}
+		prepared[i] = itemWithSnippet{item: it, snippet: snippet}
 	}
 
 	m.mu.Lock()
 	// Re-check under lock: another dispatch may have raced between the check
 	// above and here, while this one was reading the file and git status.
-	if m.overlapLocked(rel, l1, l2) {
-		m.mu.Unlock()
-		uiStatus("warn", "agent", "edit dispatch refused: overlapping edit already running", 0, os.Stdout)
-		return nil, errAgentBusy
+	for _, it := range items {
+		if m.overlapLocked(it.Path, it.L1, it.L2) {
+			m.mu.Unlock()
+			uiStatus("warn", "agent", fmt.Sprintf("edit dispatch refused: overlapping edit already running on %s:%s", it.Path, lineRef(it.L1, it.L2)), 0, os.Stdout)
+			return nil, errAgentBusy
+		}
 	}
 	m.seq++
 	ctx, cancel := context.WithTimeout(context.Background(), agentTimeout)
+
+	ranges := make([]agentRange, len(items))
+	for i, it := range items {
+		ranges[i] = agentRange{path: it.Path, l1: it.L1, l2: it.L2}
+	}
+
+	allSameFile := true
+	for _, it := range items {
+		if it.Path != items[0].Path {
+			allSameFile = false
+			break
+		}
+	}
+
+	var displayPath, displayLines string
+	if allSameFile {
+		displayPath = items[0].Path
+		if len(items) == 1 {
+			displayLines = lineRef(items[0].L1, items[0].L2)
+		} else {
+			displayLines = fmt.Sprintf("%d edits", len(items))
+		}
+	} else {
+		uniqueFiles := make(map[string]bool)
+		for _, it := range items {
+			uniqueFiles[it.Path] = true
+		}
+		displayPath = fmt.Sprintf("%d files", len(uniqueFiles))
+		displayLines = fmt.Sprintf("%d edits", len(items))
+	}
+
 	job := &agentJob{
-		ID:      m.seq,
-		Harness: name,
-		Path:    rel,
-		Lines:   lineRef(l1, l2),
-		Running: true,
-		Changed: []string{},
-		Tracked: gitAvailable(m.root),
-		l1:      l1,
-		l2:      l2,
-		out:     &tailBuffer{max: agentLogBytes},
-		stderr:  &tailBuffer{max: agentLogBytes},
-		start:   time.Now(),
-		cancel:  cancel,
+		ID:         m.seq,
+		Harness:    name,
+		Path:       displayPath,
+		Lines:      displayLines,
+		Running:    true,
+		Changed:    []string{},
+		Tracked:    gitAvailable(m.root),
+		BatchCount: len(items),
+		Items:      items,
+		ranges:     ranges,
+		l1:         items[0].L1,
+		l2:         items[0].L2,
+		out:        &tailBuffer{max: agentLogBytes},
+		stderr:     &tailBuffer{max: agentLogBytes},
+		start:      time.Now(),
+		cancel:     cancel,
 	}
 	if m.jobs == nil {
 		m.jobs = map[int64]*agentJob{}
@@ -787,8 +878,20 @@ func (m *agentManager) Start(abs, rel string, l1, l2 int, instruction string, fo
 	if m.models != nil && m.models[name] != "" {
 		modelStr = fmt.Sprintf(" (%s)", m.models[name])
 	}
-	uiStatus("step", "agent", fmt.Sprintf("#%d %s%s · %s:%s  %q", job.ID, name, modelStr, rel, lineRef(l1, l2), instruction), 0, os.Stdout)
-	go m.run(ctx, cancel, job, args, agentPrompt(rel, l1, l2, snippet, instruction))
+	if len(items) == 1 {
+		uiStatus("step", "agent", fmt.Sprintf("#%d %s%s · %s:%s  %q", job.ID, name, modelStr, items[0].Path, lineRef(items[0].L1, items[0].L2), items[0].Instruction), 0, os.Stdout)
+	} else {
+		uiStatus("step", "agent", fmt.Sprintf("#%d %s%s · batch %d edits across %s", job.ID, name, modelStr, len(items), displayPath), 0, os.Stdout)
+	}
+
+	var prompt string
+	if len(items) == 1 {
+		prompt = agentPrompt(items[0].Path, items[0].L1, items[0].L2, prepared[0].snippet, items[0].Instruction)
+	} else {
+		prompt = agentBatchPrompt(prepared)
+	}
+
+	go m.run(ctx, cancel, job, args, prompt)
 	return m.Job(job.ID), nil
 }
 
@@ -1004,6 +1107,28 @@ func agentPrompt(rel string, l1, l2 int, snippet, instruction string) string {
 	return b.String()
 }
 
+type itemWithSnippet struct {
+	item    agentBatchItem
+	snippet string
+}
+
+func agentBatchPrompt(items []itemWithSnippet) string {
+	var b strings.Builder
+	b.WriteString("Batch Edit Request: Carry out all of the following instructions across the workspace.\n\n")
+	for i, it := range items {
+		ext := strings.TrimPrefix(filepath.Ext(it.item.Path), ".")
+		lineStr := fmt.Sprintf("lines %d-%d", it.item.L1, it.item.L2)
+		if it.item.L1 == it.item.L2 {
+			lineStr = fmt.Sprintf("line %d", it.item.L1)
+		}
+		fmt.Fprintf(&b, "### Edit %d: @%s %s\n```%s\n%s\n```\n\n", i+1, it.item.Path, lineStr, ext, it.snippet)
+		fmt.Fprintf(&b, "**Instruction**: %s\n\n", it.item.Instruction)
+	}
+	b.WriteString("Edit the file(s) in place to carry out all of the above instructions. ")
+	b.WriteString("Change only what they ask for, coordinate changes cleanly, and do not explain the changes afterwards.")
+	return b.String()
+}
+
 // ---------------------------------------------------------------- HTTP
 
 func (s *Server) agentOrFail(w http.ResponseWriter) bool {
@@ -1063,6 +1188,10 @@ func (s *Server) handleAgentEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
+	if q.Get("path") == "" {
+		s.handleAgentBatchEdit(w, r)
+		return
+	}
 	abs, rel, ok := s.resolvePath(q.Get("path"))
 	if !ok {
 		fail(w, 400, "bad path")
@@ -1072,6 +1201,111 @@ func (s *Server) handleAgentEdit(w http.ResponseWriter, r *http.Request) {
 	l2, _ := strconv.Atoi(q.Get("l2"))
 
 	job, err := s.agent.Start(abs, rel, l1, l2, q.Get("instruction"), q.Get("force") == "1")
+	if err != nil {
+		code := 400
+		if errors.Is(err, errAgentBusy) || errors.Is(err, errAgentDirty) {
+			code = http.StatusConflict
+		}
+		fail(w, code, err.Error())
+		return
+	}
+	writeJSON(w, job)
+}
+
+func (s *Server) handleAgentBatchEdit(w http.ResponseWriter, r *http.Request) {
+	if !localPost(w, r) {
+		return
+	}
+	if !s.agentOrFail(w) {
+		return
+	}
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		fail(w, 400, "failed reading body")
+		return
+	}
+
+	var req struct {
+		Edits []struct {
+			Path        string `json:"path"`
+			L1          int    `json:"l1"`
+			L2          int    `json:"l2"`
+			Instruction string `json:"instruction"`
+		} `json:"edits"`
+		Force bool `json:"force"`
+	}
+
+	if err := json.Unmarshal(bodyBytes, &req); err != nil || len(req.Edits) == 0 {
+		var list []struct {
+			Path        string `json:"path"`
+			L1          int    `json:"l1"`
+			L2          int    `json:"l2"`
+			Instruction string `json:"instruction"`
+		}
+		var single struct {
+			Path        string `json:"path"`
+			L1          int    `json:"l1"`
+			L2          int    `json:"l2"`
+			Instruction string `json:"instruction"`
+			Force       bool   `json:"force"`
+		}
+		q := r.URL.Query()
+		if err2 := json.Unmarshal(bodyBytes, &list); err2 == nil && len(list) > 0 {
+			req.Edits = list
+		} else if err3 := json.Unmarshal(bodyBytes, &single); err3 == nil && single.Path != "" {
+			req.Edits = []struct {
+				Path        string `json:"path"`
+				L1          int    `json:"l1"`
+				L2          int    `json:"l2"`
+				Instruction string `json:"instruction"`
+			}{{Path: single.Path, L1: single.L1, L2: single.L2, Instruction: single.Instruction}}
+			if single.Force {
+				req.Force = true
+			}
+		} else if qEdits := q.Get("edits"); qEdits != "" {
+			if err4 := json.Unmarshal([]byte(qEdits), &req.Edits); err4 != nil || len(req.Edits) == 0 {
+				if err5 := json.Unmarshal([]byte(qEdits), &list); err5 == nil && len(list) > 0 {
+					req.Edits = list
+				}
+			}
+		} else if q.Get("path") != "" {
+			l1, _ := strconv.Atoi(q.Get("l1"))
+			l2, _ := strconv.Atoi(q.Get("l2"))
+			req.Edits = []struct {
+				Path        string `json:"path"`
+				L1          int    `json:"l1"`
+				L2          int    `json:"l2"`
+				Instruction string `json:"instruction"`
+			}{{Path: q.Get("path"), L1: l1, L2: l2, Instruction: q.Get("instruction")}}
+			if q.Get("force") == "1" {
+				req.Force = true
+			}
+		}
+
+		if len(req.Edits) == 0 {
+			fail(w, 400, "invalid or empty batch edits payload")
+			return
+		}
+	}
+
+	items := make([]agentBatchItem, len(req.Edits))
+	for i, e := range req.Edits {
+		abs, rel, ok := s.resolvePath(e.Path)
+		if !ok {
+			fail(w, 400, fmt.Sprintf("bad path: %s", e.Path))
+			return
+		}
+		items[i] = agentBatchItem{
+			Abs:         abs,
+			Path:        rel,
+			L1:          e.L1,
+			L2:          e.L2,
+			Instruction: e.Instruction,
+		}
+	}
+
+	job, err := s.agent.StartBatch(items, req.Force)
 	if err != nil {
 		code := 400
 		if errors.Is(err, errAgentBusy) || errors.Is(err, errAgentDirty) {
