@@ -5857,7 +5857,7 @@
   // web/src/agent.js
   var box = $("#agentbox");
   var tpl = $("#agentbox-tpl");
-  var listEl2 = $("#agentbox-list");
+  var agentListEl = $("#agentbox-list");
   var batchBar = $("#agent-batch-bar");
   var batchCount = $("#agent-batch-count");
   var batchClear = $("#agent-batch-clear");
@@ -6079,7 +6079,7 @@
   }
   function createSession(info) {
     const el = tpl.content.firstElementChild.cloneNode(true);
-    const parent = listEl2 || box;
+    const parent = agentListEl || box;
     const existing = [...parent.children];
     let inserted = false;
     for (const child of existing) {

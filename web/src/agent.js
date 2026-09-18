@@ -27,7 +27,7 @@ import { syncDiffAgentTargets } from './diff.js';
 
 const box = $('#agentbox');
 const tpl = $('#agentbox-tpl');
-const listEl = $('#agentbox-list');
+const agentListEl = $('#agentbox-list');
 const batchBar = $('#agent-batch-bar');
 const batchCount = $('#agent-batch-count');
 const batchClear = $('#agent-batch-clear');
@@ -268,7 +268,7 @@ function syncAgentTargets() {
 function createSession(info) {
   const el = tpl.content.firstElementChild.cloneNode(true);
   // Stack into #agentbox-list inside #agentbox from top to bottom
-  const parent = listEl || box;
+  const parent = agentListEl || box;
   const existing = [...parent.children];
   let inserted = false;
   for (const child of existing) {
