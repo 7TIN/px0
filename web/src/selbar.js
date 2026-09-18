@@ -219,6 +219,7 @@ function openSelMenu(x, y) {
     btn.className = 'sel-menu-item';
     btn.dataset.sel = item.sel;
     btn.setAttribute('role', 'menuitem');
+    btn.title = item.label + (item.keys ? ` (${keyLabel(item.keys)})` : '');
     const label = document.createElement('span');
     label.textContent = item.label;
     btn.append(label);

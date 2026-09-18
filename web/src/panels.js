@@ -3,7 +3,7 @@ import { $, $$, S, api } from './state.js';
 import { layout, render } from './renderer.js';
 import { updateStatus } from './status.js';
 import { loadOutline } from './outline.js';
-import { treeEl, refreshTree } from './tree.js';
+import { treeEl, refreshTree, setSidebarMode } from './tree.js';
 import { reloadOpenTabs } from './tabs.js';
 import { showToast } from './ui.js';
 
@@ -17,6 +17,14 @@ export async function reindexWorkspace() {
   try {
     const j = await api('/api/reindex');
     S.meta.files = j.files; S.meta.indexMs = j.indexMs;
+    if (j.gitChanges !== undefined) S.meta.gitChanges = j.gitChanges;
+    if (j.gitFiles !== undefined) S.meta.gitFiles = j.gitFiles;
+    const hasGitChanges = !!(S.meta?.git && S.meta.gitChanges > 0);
+    if (hasGitChanges) {
+      await setSidebarMode('git');
+    } else {
+      setSidebarMode('files');
+    }
     await refreshTree();
     await reloadOpenTabs();
     updateStatus();

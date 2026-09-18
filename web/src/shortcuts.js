@@ -54,7 +54,7 @@ export function showHelp() {
   const h = $('#helpsheet');
   const ver = S.meta?.version ? ` <span class="help-version">v${esc(S.meta.version)}</span>` : '';
   h.innerHTML = '<div class="help-card"><div class="help-header"><h2>Keyboard Shortcuts</h2>' + ver +
-    '<button id="btn-switch-to-vim-help" class="settings-btn-link" style="margin-left:auto;font-size:12px;cursor:pointer;">View Vim Keybindings</button></div><dl class="help-grid">' +
+    '<button id="btn-switch-to-vim-help" class="settings-btn-link" style="margin-left:auto;font-size:12px;cursor:pointer;" title="View Vim Keybindings">View Vim Keybindings</button></div><dl class="help-grid">' +
     SHORTCUTS.map(([combos, v]) =>
       '<dt>' + combos.map(keyCaps).filter(Boolean).join('<span class="key-or">/</span>') + '</dt>' +
       '<dd>' + esc(v) + '</dd>').join('') + '</dl></div>';

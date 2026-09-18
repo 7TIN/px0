@@ -7,7 +7,7 @@ import { pushHistory } from './history.js';
 import { warmLSP } from './lsp.js';
 import { loadOutline } from './outline.js';
 import { showPanel } from './panels.js';
-import { revealDir } from './tree.js';
+import { revealDir, treeEl } from './tree.js';
 import { clearLink } from './hover.js';
 import { clearFind } from './find.js';
 import { clearSelectAll } from './selbar.js';
@@ -59,6 +59,10 @@ export async function openFile(path, opts = {}) {
   if (prev !== S.tabs[idx]) { clearSelectAll(); clearFind(); }
   S.active = idx;
   const d = S.tabs[idx];
+  if (d && d.diffAvailable && (treeEl?.classList.contains('changed-only') || (!d.diffDismissed && d.diffMode === null))) {
+    d.diffMode = layoutPref() || 'split';
+    d.diffDismissed = false;
+  }
 
   $('#empty').hidden = true;
   syncImageView();
@@ -301,6 +305,11 @@ export function switchTab(i) {
   const prev = doc_();
   if (prev) prev.scrollTop = vp.scrollTop;
   S.active = i;
+  const curDoc = S.tabs[i];
+  if (curDoc && curDoc.diffAvailable && (treeEl?.classList.contains('changed-only') || (!curDoc.diffDismissed && curDoc.diffMode === null))) {
+    curDoc.diffMode = layoutPref() || 'split';
+    curDoc.diffDismissed = false;
+  }
   syncImageView();
   syncPreview();
   syncDiffView();

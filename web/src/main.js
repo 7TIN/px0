@@ -1,11 +1,11 @@
 // web/src/main.js
 import { $, S, api, applyKeyLabels } from './state.js';
 import { measure, layout, render, initRenderer, updateEditorOptionControls } from './renderer.js';
-import { initTabs, openFile, restoreWorkspaceTabs } from './tabs.js';
+import { initTabs, openFile, restoreWorkspaceTabs, switchTab } from './tabs.js';
 import { initCursor } from './cursor.js';
 import { initHover } from './hover.js';
 import { initSelectionBar } from './selbar.js';
-import { drawTree, treeEl, initTree, revealFile, refreshTree, restoreOpenDirs } from './tree.js';
+import { drawTree, treeEl, initTree, revealFile, refreshTree, restoreOpenDirs, setSidebarMode, updateSidebarToggleState } from './tree.js';
 import { initSearch } from './search.js';
 import { initOutline } from './outline.js';
 import { initPanels } from './panels.js';
@@ -73,7 +73,7 @@ initImageViewer();
   measure();
   S.meta = await api('/api/meta');
   if (S.meta.metrics) updateMetricsDisplay(S.meta.metrics);
-  if (S.meta.git) { const b = $('#btn-changed'); if (b) b.hidden = false; }
+  updateSidebarToggleState();
   applyAgentMeta();
   document.title = S.meta.name + ' - px0';
   $('#root-name').textContent = S.meta.name;
@@ -87,6 +87,13 @@ initImageViewer();
     restoreOpenDirs(savedDirs);
   } catch {}
   await refreshTree();
+
+  const hasGitChanges = !!(S.meta?.git && S.meta.gitChanges > 0);
+  if (hasGitChanges) {
+    await setSidebarMode('git');
+  } else {
+    setSidebarMode('files');
+  }
 
   const params = new URLSearchParams(window.location.search);
   const initialPath = params.get('path');
@@ -103,7 +110,19 @@ initImageViewer();
       window.history.replaceState({}, '', cleanUrl);
     } catch {}
   } else {
-    await restoreWorkspaceTabs();
+    const restored = await restoreWorkspaceTabs();
+    if (hasGitChanges) {
+      const hasActiveDiff = S.tabs[S.active]?.diffAvailable;
+      if (!hasActiveDiff) {
+        const changedTabIdx = S.tabs.findIndex(t => t.diffAvailable);
+        if (changedTabIdx >= 0) {
+          switchTab(changedTabIdx);
+        } else if (S.meta.gitFiles && S.meta.gitFiles.length > 0) {
+          await openFile(S.meta.gitFiles[0]);
+          await revealFile(S.meta.gitFiles[0]);
+        }
+      }
+    }
   }
 
   if (document.fonts && document.fonts.ready) {

@@ -54,13 +54,54 @@ body.side-hidden #side, body.side-hidden #resizer { display: none; }
   font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--dim);
 }
 .panel-head #root-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.panel-actions { margin-left: auto; flex: none; display: flex; align-items: center; gap: 2px; }
+.panel-actions { margin-left: auto; flex: none; display: flex; align-items: center; gap: 4px; }
 .panel-actions .mini { margin-left: 0; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; }
 .panel-actions .mini svg { display: block; }
 .mini { margin-left: auto; color: var(--faint); font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 4px; }
 .mini:hover { color: var(--fg); background: var(--bg3); }
-/* "Show changed files only" toggle: on while the tree is filtered to git changes. */
-#btn-changed.active { color: var(--accent-fg); background: var(--bg3); }
+
+/* Sidebar Explorer vs Git Changes segmented toggle */
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg3);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px;
+  gap: 1px;
+  height: 20px;
+}
+.sidebar-toggle .toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 16px;
+  padding: 0;
+  border-radius: 3px;
+  color: var(--dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease, opacity .12s ease;
+}
+.sidebar-toggle .toggle-btn svg { display: block; }
+.sidebar-toggle .toggle-btn:hover:not(:disabled) { color: var(--fg); }
+.sidebar-toggle .toggle-btn.active {
+  background: var(--bg);
+  color: var(--accent-fg);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.sidebar-toggle .toggle-btn:disabled,
+.sidebar-toggle .toggle-btn.disabled {
+  opacity: .32;
+  cursor: not-allowed;
+}
+.sidebar-toggle .toggle-btn:disabled:hover,
+.sidebar-toggle .toggle-btn.disabled:hover {
+  color: var(--dim);
+}
 .panel-body { flex: 1; overflow: auto; padding-bottom: 16px; }
 /* Version and theme, level with the status bar beside it. */
 .side-foot {
@@ -239,6 +280,17 @@ body.right-hidden #right-side, body.right-hidden #right-resizer { display: none;
 .view-switch button { padding: 0 9px; border-radius: 3px; font-size: 11px; line-height: 18px; color: var(--dim); }
 .view-switch button:hover { color: var(--fg); }
 .view-switch button.on { background: var(--bg); color: var(--accent-fg); font-weight: 600; }
+.view-switch button:disabled,
+.view-switch button.disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+.diff-seg:has(#diff-btn:disabled) .diff-menu {
+  display: none !important;
+}
+.diff-seg:has(#diff-btn:disabled) .diff-caret {
+  opacity: .2;
+}
 
 /* Diff dropdown & view-mode menu */
 .diff-seg { position: relative; display: flex; }
@@ -870,6 +922,22 @@ kbd {
 }
 .agent-err[hidden] { display: none; }
 .agent-err-msg { color: var(--err); white-space: pre-wrap; overflow-wrap: anywhere; }
+.agent-err-actions { margin-top: 4px; display: flex; align-items: center; }
+.agent-err-cancel-btn {
+  font: 11px/18px var(--sans);
+  background: var(--bg3);
+  color: var(--err);
+  border: 1px solid var(--err);
+  border-radius: 3px;
+  padding: 1px 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background .12s ease, color .12s ease;
+}
+.agent-err-cancel-btn:hover {
+  background: var(--err);
+  color: #fff;
+}
 .agent-err-label { margin-top: 4px; font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; }
 .agent-err-out {
   margin: 0; font: inherit; color: var(--dim);

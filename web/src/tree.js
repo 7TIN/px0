@@ -1,6 +1,7 @@
 // web/src/tree.js
-import { $, $$, esc, api } from './state.js';
+import { $, $$, esc, api, S } from './state.js';
 import { openFile } from './tabs.js';
+import { setStatusNote } from './status.js';
 
 export const treeEl = $('#tree');
 export const openDirs = new Set();
@@ -69,6 +70,9 @@ export async function refreshTree() {
       openDirs.delete(path);
     }
   }
+  if (treeEl.classList.contains('changed-only')) {
+    await expandDirtyDirs();
+  }
 }
 
 export function restoreOpenDirs(dirs) {
@@ -115,11 +119,70 @@ export async function revealFile(path) {
   }
 }
 
+export async function expandDirtyDirs(container = treeEl) {
+  const dirtyRows = Array.from(container.querySelectorAll('.tr.dir.dirty:not(.open)'));
+  for (const dirRow of dirtyRows) {
+    const path = dirRow.dataset.dir;
+    const kids = container.querySelector('[data-kids="' + CSS.escape(path) + '"]');
+    if (kids) {
+      dirRow.classList.add('open');
+      kids.classList.add('open');
+      kids.dataset.loaded = '1';
+      openDirs.add(path);
+      await drawTree(path, kids, path.split('/').length);
+      await expandDirtyDirs(kids);
+    }
+  }
+  try {
+    sessionStorage.setItem('px0.openDirs', JSON.stringify(Array.from(openDirs)));
+  } catch {}
+}
+
+export function updateSidebarToggleState() {
+  const btnChanged = $('#btn-changed');
+  const hasGitChanges = !!(S.meta?.git && S.meta.gitChanges > 0);
+  if (btnChanged) {
+    btnChanged.disabled = !hasGitChanges;
+    btnChanged.classList.toggle('disabled', !hasGitChanges);
+    if (!S.meta?.git) {
+      btnChanged.title = 'Git not available in workspace';
+    } else if (!hasGitChanges) {
+      btnChanged.title = 'There are no git modified files.';
+    } else {
+      btnChanged.title = 'Git changes (show changed files only)';
+    }
+  }
+}
+
+export async function setSidebarMode(mode) {
+  const btnChanged = $('#btn-changed');
+  const btnFiles = $('#btn-files');
+  updateSidebarToggleState();
+  const hasGitChanges = !!(S.meta?.git && S.meta.gitChanges > 0);
+
+  if (mode === 'git' && hasGitChanges) {
+    treeEl.classList.add('changed-only');
+    btnChanged?.classList.add('active');
+    btnFiles?.classList.remove('active');
+    await expandDirtyDirs();
+  } else {
+    treeEl.classList.remove('changed-only');
+    btnFiles?.classList.add('active');
+    btnChanged?.classList.remove('active');
+  }
+}
+
 export function initTree() {
-  // "Changed only" filter: hide clean files and known-clean folders (CSS-driven).
-  $('#btn-changed')?.addEventListener('click', e => {
-    const on = treeEl.classList.toggle('changed-only');
-    e.currentTarget.classList.toggle('active', on);
+  updateSidebarToggleState();
+
+  $('#btn-changed')?.addEventListener('click', async () => {
+    const hasGitChanges = !!(S.meta?.git && S.meta.gitChanges > 0);
+    if (!hasGitChanges) return;
+    await setSidebarMode('git');
+  });
+
+  $('#btn-files')?.addEventListener('click', () => {
+    setSidebarMode('files');
   });
 
   treeEl.addEventListener('click', async e => {

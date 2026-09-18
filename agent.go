@@ -628,10 +628,6 @@ func (m *agentManager) Select(name string, modelOpt ...string) error {
 		m.mu.Unlock()
 		return errors.New("px0 was started with -agent, so the harness is fixed for this run")
 	}
-	if m.anyRunningLocked() {
-		m.mu.Unlock()
-		return errAgentBusy
-	}
 	m.mu.Unlock()
 
 	name = strings.TrimSpace(name)
@@ -725,7 +721,9 @@ func (m *agentManager) anyRunningLocked() bool {
 // overlapLocked reports whether a running job already touches rel within
 // [l1,l2]. Different paths, or disjoint ranges on the same path, are free to
 // run at the same time. Callers hold m.mu.
-func (m *agentManager) overlapLocked(rel string, l1, l2 int) bool {
+// findOverlappingJobLocked returns the running job that touches rel within [l1, l2],
+// or nil if none overlaps. Callers hold m.mu.
+func (m *agentManager) findOverlappingJobLocked(rel string, l1, l2 int) *agentJob {
 	for _, j := range m.jobs {
 		if !j.Running {
 			continue
@@ -733,14 +731,21 @@ func (m *agentManager) overlapLocked(rel string, l1, l2 int) bool {
 		if len(j.ranges) > 0 {
 			for _, r := range j.ranges {
 				if r.path == rel && l1 <= r.l2 && r.l1 <= l2 {
-					return true
+					return j
 				}
 			}
 		} else if j.Path == rel && l1 <= j.l2 && j.l1 <= l2 {
-			return true
+			return j
 		}
 	}
-	return false
+	return nil
+}
+
+// overlapLocked reports whether a running job already touches rel within
+// [l1,l2]. Different paths, or disjoint ranges on the same path, are free to
+// run at the same time. Callers hold m.mu.
+func (m *agentManager) overlapLocked(rel string, l1, l2 int) bool {
+	return m.findOverlappingJobLocked(rel, l1, l2) != nil
 }
 
 // Start dispatches an instruction anchored to abs:l1-l2. It returns as soon as
@@ -787,10 +792,12 @@ func (m *agentManager) StartBatch(items []agentBatchItem, force bool) (*agentJob
 		return nil, errAgentNone
 	}
 	for _, it := range items {
-		if m.overlapLocked(it.Path, it.L1, it.L2) {
+		if blocking := m.findOverlappingJobLocked(it.Path, it.L1, it.L2); blocking != nil {
 			m.mu.Unlock()
-			uiStatus("warn", "agent", fmt.Sprintf("edit dispatch refused: overlapping edit already running on %s:%s", it.Path, lineRef(it.L1, it.L2)), 0, os.Stdout)
-			return nil, errAgentBusy
+			loc := fmt.Sprintf("%s:%s", it.Path, lineRef(it.L1, it.L2))
+			msg := fmt.Sprintf("an edit is already running on %s (job #%d with %s)", loc, blocking.ID, blocking.Harness)
+			uiStatus("warn", "agent", "edit dispatch refused: "+msg, 0, os.Stdout)
+			return nil, fmt.Errorf("%w: %s", errAgentBusy, msg)
 		}
 	}
 	args := m.args
@@ -811,10 +818,12 @@ func (m *agentManager) StartBatch(items []agentBatchItem, force bool) (*agentJob
 	// Re-check under lock: another dispatch may have raced between the check
 	// above and here, while this one was reading the file and git status.
 	for _, it := range items {
-		if m.overlapLocked(it.Path, it.L1, it.L2) {
+		if blocking := m.findOverlappingJobLocked(it.Path, it.L1, it.L2); blocking != nil {
 			m.mu.Unlock()
-			uiStatus("warn", "agent", fmt.Sprintf("edit dispatch refused: overlapping edit already running on %s:%s", it.Path, lineRef(it.L1, it.L2)), 0, os.Stdout)
-			return nil, errAgentBusy
+			loc := fmt.Sprintf("%s:%s", it.Path, lineRef(it.L1, it.L2))
+			msg := fmt.Sprintf("an edit is already running on %s (job #%d with %s)", loc, blocking.ID, blocking.Harness)
+			uiStatus("warn", "agent", "edit dispatch refused: "+msg, 0, os.Stdout)
+			return nil, fmt.Errorf("%w: %s", errAgentBusy, msg)
 		}
 	}
 	m.seq++
@@ -897,6 +906,15 @@ func (m *agentManager) StartBatch(items []agentBatchItem, force bool) (*agentJob
 
 func (m *agentManager) run(ctx context.Context, cancel context.CancelFunc, job *agentJob, template []string, prompt string) {
 	defer cancel()
+	defer func() {
+		m.mu.Lock()
+		job.Running = false
+		job.Ms = time.Since(job.start).Milliseconds()
+		if job.cancel != nil {
+			job.cancel = nil
+		}
+		m.mu.Unlock()
+	}()
 
 	if uiVerbose {
 		uiVerbosePrompt(job.ID, job.Harness, prompt, os.Stdout)
@@ -916,6 +934,8 @@ func (m *agentManager) run(ctx context.Context, cancel context.CancelFunc, job *
 	cmd.Dir = m.root
 	cmd.Stdout = stdoutStreamer
 	cmd.Stderr = stderrStreamer
+	cmd.WaitDelay = 2 * time.Second
+	setProcessGroup(cmd)
 	// stdin stays empty: a harness that still wants to ask something fails
 	// fast instead of hanging until the timeout with nothing on screen.
 
@@ -923,7 +943,11 @@ func (m *agentManager) run(ctx context.Context, cancel context.CancelFunc, job *
 	stdoutStreamer.Flush()
 	stderrStreamer.Flush()
 	if ctx.Err() != nil {
-		err = fmt.Errorf("gave up after %s", agentTimeout)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			err = errors.New("cancelled")
+		} else {
+			err = fmt.Errorf("gave up after %s", agentTimeout)
+		}
 	}
 
 	changed := changedSince(m.root, before)
@@ -1002,7 +1026,11 @@ func (m *agentManager) CancelJob(id int64) bool {
 		j := m.jobs[id]
 		if j != nil && j.Running && j.cancel != nil {
 			uiStatus("warn", "agent", fmt.Sprintf("cancelled in-flight run with %s (job %d)", j.Harness, j.ID), 0, os.Stdout)
-			j.cancel()
+			j.Running = false
+			j.Error = "cancelled"
+			cancel := j.cancel
+			j.cancel = nil
+			cancel()
 			return true
 		}
 		return false
@@ -1013,7 +1041,11 @@ func (m *agentManager) CancelJob(id int64) bool {
 			continue
 		}
 		uiStatus("warn", "agent", fmt.Sprintf("cancelled in-flight run with %s (job %d)", j.Harness, j.ID), 0, os.Stdout)
-		j.cancel()
+		j.Running = false
+		j.Error = "cancelled"
+		cancel := j.cancel
+		j.cancel = nil
+		cancel()
 		cancelled = true
 	}
 	return cancelled

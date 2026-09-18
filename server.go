@@ -241,6 +241,7 @@ func (s *Server) handleThemes(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	n, at, ms := s.ix.Stats()
+	gitCount, gitFiles := s.ix.GitChanges()
 	writeJSON(w, map[string]any{
 		"root":        s.ix.Root(),
 		"name":        filepath.Base(s.ix.Root()),
@@ -249,6 +250,8 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		"builtAt":     at,
 		"ready":       s.ix.Ready(),
 		"git":         gitAvailable(s.ix.Root()),
+		"gitChanges":  gitCount,
+		"gitFiles":    gitFiles,
 		"lspServers":  s.lsp.Available(),
 		"metrics":     getProcessMetrics(),
 		"version":     version,
@@ -770,7 +773,8 @@ func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {
 	EvictAll()
 	s.ix.Build()
 	n, _, ms := s.ix.Stats()
-	writeJSON(w, map[string]any{"files": n, "indexMs": ms})
+	gitCount, gitFiles := s.ix.GitChanges()
+	writeJSON(w, map[string]any{"files": n, "indexMs": ms, "gitChanges": gitCount, "gitFiles": gitFiles})
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {

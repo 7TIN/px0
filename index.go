@@ -39,9 +39,11 @@ type Index struct {
 	mu       sync.RWMutex
 	files    []FileEntry
 	children map[string][]Node
-	builtAt  time.Time
-	buildMS  int64
-	readyCh  chan struct{}
+	builtAt    time.Time
+	buildMS    int64
+	gitChanges int
+	gitFiles   []string
+	readyCh    chan struct{}
 }
 
 func NewIndex(root string) *Index {
@@ -78,6 +80,14 @@ func (ix *Index) Files() []FileEntry {
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
 	return ix.files
+}
+
+func (ix *Index) GitChanges() (int, []string) {
+	ix.mu.RLock()
+	defer ix.mu.RUnlock()
+	res := make([]string, len(ix.gitFiles))
+	copy(res, ix.gitFiles)
+	return ix.gitChanges, res
 }
 
 // Children lists a directory for the tree. Ignored directories are never walked,
@@ -270,11 +280,22 @@ func (ix *Index) Build() {
 	// Every ancestor directory of a changed file is dirty, so a collapsed folder
 	// can badge without the frontend fetching its subtree.
 	dirtyDirs := map[string]bool{}
-	for p := range gs {
-		for i := strings.LastIndexByte(p, '/'); i >= 0; i = strings.LastIndexByte(p, '/') {
-			p = p[:i]
-			dirtyDirs[p] = true
+	var gitFiles []string
+	if gs != nil {
+		for p := range gs {
+			gitFiles = append(gitFiles, p)
+			for i := strings.LastIndexByte(p, '/'); i >= 0; i = strings.LastIndexByte(p, '/') {
+				p = p[:i]
+				dirtyDirs[p] = true
+			}
 		}
+		sort.Slice(gitFiles, func(i, j int) bool {
+			si, sj := gs[gitFiles[i]], gs[gitFiles[j]]
+			if (si != "U") != (sj != "U") {
+				return si != "U"
+			}
+			return gitFiles[i] < gitFiles[j]
+		})
 	}
 
 	ix.mu.Lock()
@@ -289,6 +310,8 @@ func (ix *Index) Build() {
 			}
 		}
 	}
+	ix.gitChanges = len(gitFiles)
+	ix.gitFiles = gitFiles
 	ix.files, ix.children = files, children
 	ix.builtAt, ix.buildMS = time.Now(), time.Since(start).Milliseconds()
 	select {

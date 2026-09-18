@@ -405,6 +405,33 @@ function clearErr(session) {
   errEl.hidden = true;
 }
 
+function attachAlreadyRunningCancel(errContainer) {
+  const row = document.createElement('div');
+  row.className = 'agent-err-actions';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'agent-err-cancel-btn';
+  btn.textContent = 'Cancel in-flight edit';
+  btn.title = 'Stop and cancel running edits on the server';
+  btn.onclick = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    btn.disabled = true;
+    btn.textContent = 'Cancelling...';
+    try {
+      await apiPost('/api/agent/cancel', { id: 0 });
+      showToast('✓', 'Cancelled running edit');
+      errContainer.hidden = true;
+    } catch (err) {
+      showToast('!', 'Failed to cancel: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = 'Cancel in-flight edit';
+    }
+  };
+  row.appendChild(btn);
+  errContainer.appendChild(row);
+}
+
 /* Renders a failure inline under the instruction. A harness run also carries
    what it printed, which is usually the only clue to why it exited non-zero. */
 function showErr(session, msg, streams = []) {
@@ -415,6 +442,9 @@ function showErr(session, msg, streams = []) {
   head.className = 'agent-err-msg';
   head.textContent = msg;
   errEl.appendChild(head);
+  if (msg && msg.includes('already running')) {
+    attachAlreadyRunningCancel(errEl);
+  }
   for (const [label, text] of streams) {
     if (!text) continue;
     const name = document.createElement('div');
@@ -637,6 +667,9 @@ function showBatchErr(msg, streams = []) {
   head.className = 'agent-err-msg';
   head.textContent = msg;
   batchErr.appendChild(head);
+  if (msg && msg.includes('already running')) {
+    attachAlreadyRunningCancel(batchErr);
+  }
   for (const [label, text] of streams) {
     if (!text) continue;
     const name = document.createElement('div');
@@ -939,4 +972,11 @@ export function initAgent() {
     e.preventDefault();
     e.returnValue = '';
   });
+
+  // Probe if an in-flight job is already active on the server
+  api('/api/agent/job?id=0').then(j => {
+    if (j && j.running) {
+      setStatusNote('In-flight edit running on ' + (j.path || 'workspace') + ' (' + (j.harness || 'agent') + ')', 6000);
+    }
+  }).catch(() => {});
 }

@@ -142,10 +142,62 @@ func TestGitDiff(t *testing.T) {
 		t.Errorf("clean file: available=%v diff=%q, want false/empty", body["available"], body["diff"])
 	}
 
-	// Meta reports git availability.
+	// Meta reports git availability and git changes.
 	_, meta := get(t, s, "/api/meta")
 	if meta["git"] != true {
 		t.Errorf("meta git = %v, want true", meta["git"])
+	}
+	if changes, ok := meta["gitChanges"].(float64); !ok || changes < 1 {
+		t.Errorf("meta gitChanges = %v, want >= 1", meta["gitChanges"])
+	}
+	files, ok := meta["gitFiles"].([]any)
+	found := false
+	for _, f := range files {
+		if f == "sub/mod.go" {
+			found = true
+			break
+		}
+	}
+	if !ok || !found {
+		t.Errorf("meta gitFiles = %v, want to contain sub/mod.go", meta["gitFiles"])
+	}
+}
+
+func TestGitCleanRepo(t *testing.T) {
+	if !gitInstalled() {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	runCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	runCmd("init")
+	runCmd("config", "user.email", "test@test.com")
+	runCmd("config", "user.name", "test")
+	if err := os.WriteFile(filepath.Join(dir, "clean.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd("add", "clean.go")
+	runCmd("commit", "-m", "init")
+
+	ix := NewIndex(dir)
+	ix.Build()
+	s := NewServer(ix, nil)
+
+	_, meta := get(t, s, "/api/meta")
+	if meta["git"] != true {
+		t.Errorf("git = %v, want true", meta["git"])
+	}
+	if changes, ok := meta["gitChanges"].(float64); !ok || changes != 0 {
+		t.Errorf("gitChanges = %v, want 0", meta["gitChanges"])
+	}
+	files, ok := meta["gitFiles"].([]any)
+	if !ok || len(files) != 0 {
+		t.Errorf("gitFiles = %v, want []", meta["gitFiles"])
 	}
 }
 
@@ -179,6 +231,9 @@ func TestGitDisabled(t *testing.T) {
 	_, meta := get(t, s, "/api/meta")
 	if meta["git"] != false {
 		t.Errorf("meta git = %v with -no-git, want false", meta["git"])
+	}
+	if meta["gitChanges"].(float64) != 0 {
+		t.Errorf("meta gitChanges = %v with -no-git, want 0", meta["gitChanges"])
 	}
 }
 

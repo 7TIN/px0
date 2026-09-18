@@ -764,6 +764,9 @@
         openDirs.delete(path);
       }
     }
+    if (treeEl.classList.contains("changed-only")) {
+      await expandDirtyDirs();
+    }
   }
   function restoreOpenDirs(dirs) {
     if (Array.isArray(dirs)) {
@@ -809,10 +812,65 @@
       row.scrollIntoView({ block: "center" });
     }
   }
+  async function expandDirtyDirs(container = treeEl) {
+    const dirtyRows = Array.from(container.querySelectorAll(".tr.dir.dirty:not(.open)"));
+    for (const dirRow of dirtyRows) {
+      const path = dirRow.dataset.dir;
+      const kids = container.querySelector('[data-kids="' + CSS.escape(path) + '"]');
+      if (kids) {
+        dirRow.classList.add("open");
+        kids.classList.add("open");
+        kids.dataset.loaded = "1";
+        openDirs.add(path);
+        await drawTree(path, kids, path.split("/").length);
+        await expandDirtyDirs(kids);
+      }
+    }
+    try {
+      sessionStorage.setItem("px0.openDirs", JSON.stringify(Array.from(openDirs)));
+    } catch {}
+  }
+  function updateSidebarToggleState() {
+    const btnChanged = $("#btn-changed");
+    const hasGitChanges = !!(S2.meta?.git && S2.meta.gitChanges > 0);
+    if (btnChanged) {
+      btnChanged.disabled = !hasGitChanges;
+      btnChanged.classList.toggle("disabled", !hasGitChanges);
+      if (!S2.meta?.git) {
+        btnChanged.title = "Git not available in workspace";
+      } else if (!hasGitChanges) {
+        btnChanged.title = "There are no git modified files.";
+      } else {
+        btnChanged.title = "Git changes (show changed files only)";
+      }
+    }
+  }
+  async function setSidebarMode(mode) {
+    const btnChanged = $("#btn-changed");
+    const btnFiles = $("#btn-files");
+    updateSidebarToggleState();
+    const hasGitChanges = !!(S2.meta?.git && S2.meta.gitChanges > 0);
+    if (mode === "git" && hasGitChanges) {
+      treeEl.classList.add("changed-only");
+      btnChanged?.classList.add("active");
+      btnFiles?.classList.remove("active");
+      await expandDirtyDirs();
+    } else {
+      treeEl.classList.remove("changed-only");
+      btnFiles?.classList.add("active");
+      btnChanged?.classList.remove("active");
+    }
+  }
   function initTree() {
-    $("#btn-changed")?.addEventListener("click", (e) => {
-      const on = treeEl.classList.toggle("changed-only");
-      e.currentTarget.classList.toggle("active", on);
+    updateSidebarToggleState();
+    $("#btn-changed")?.addEventListener("click", async () => {
+      const hasGitChanges = !!(S2.meta?.git && S2.meta.gitChanges > 0);
+      if (!hasGitChanges)
+        return;
+      await setSidebarMode("git");
+    });
+    $("#btn-files")?.addEventListener("click", () => {
+      setSidebarMode("files");
     });
     treeEl.addEventListener("click", async (e) => {
       const dirRow = e.target.closest("[data-dir]");
@@ -852,6 +910,16 @@
       const j = await api("/api/reindex");
       S2.meta.files = j.files;
       S2.meta.indexMs = j.indexMs;
+      if (j.gitChanges !== undefined)
+        S2.meta.gitChanges = j.gitChanges;
+      if (j.gitFiles !== undefined)
+        S2.meta.gitFiles = j.gitFiles;
+      const hasGitChanges = !!(S2.meta?.git && S2.meta.gitChanges > 0);
+      if (hasGitChanges) {
+        await setSidebarMode("git");
+      } else {
+        setSidebarMode("files");
+      }
       await refreshTree();
       await reloadOpenTabs();
       updateStatus();
@@ -1818,7 +1886,7 @@
     const running = s.servers.some((v) => v.job && v.job.running);
     let html = '<div class="lsp-setup">';
     if (s.state === "failed") {
-      html += "<p><b>" + esc2(s.server) + '</b> did not start: <span class="lsp-reason">' + esc2(s.reason || "unknown error") + "</span></p>" + '<div class="lsp-row"><button class="lsp-btn" data-start>Retry</button></div>';
+      html += "<p><b>" + esc2(s.server) + '</b> did not start: <span class="lsp-reason">' + esc2(s.reason || "unknown error") + "</span></p>" + '<div class="lsp-row"><button class="lsp-btn" data-start title="Retry starting language server">Retry</button></div>';
       if (offer.length)
         html += "<p>If it is broken or incomplete, install it again:</p>";
     } else {
@@ -1833,8 +1901,8 @@
         else if (!o.hasTool)
           html += '<span class="lsp-need">needs ' + esc2(o.tool) + "</span>";
         else
-          html += '<button class="lsp-btn primary" data-install="' + esc2(v.name) + '" data-option="' + i + '"' + (running ? " disabled" : "") + ">Install</button>";
-        html += '<button class="lsp-btn" data-copy="' + esc2(o.cmd) + '">Copy</button></span></div>';
+          html += '<button class="lsp-btn primary" data-install="' + esc2(v.name) + '" data-option="' + i + '"' + (running ? " disabled" : "") + ' title="Install language server">Install</button>';
+        html += '<button class="lsp-btn" data-copy="' + esc2(o.cmd) + '" title="Copy command to clipboard">Copy</button></span></div>';
       });
       if (v.job)
         html += job(v.job);
@@ -1843,7 +1911,7 @@
     if (!offer.length) {
       html += "<p>px0 has no installer for this one. Install " + s.servers.map((v) => "<b>" + esc2(v.name) + "</b>").join(" or ") + " and make sure it is on PATH.</p>";
     }
-    html += '<div class="lsp-row"><span>Installed one yourself?</span><button class="lsp-btn" data-start>Detect and start</button></div></div>';
+    html += '<div class="lsp-row"><span>Installed one yourself?</span><button class="lsp-btn" data-start title="Detect and start language server">Detect and start</button></div></div>';
     return html;
   }
   function job(j) {
@@ -2996,7 +3064,10 @@
     });
     $("#diff-btn")?.addEventListener("click", (e) => {
       e.stopPropagation();
-      setDiffMode(doc_()?.diffMode || layoutPref());
+      const d = doc_();
+      if (!d || !d.diffAvailable)
+        return;
+      setDiffMode(d.diffMode || layoutPref());
     });
     const menu = $("#diff-menu");
     if (menu) {
@@ -3037,19 +3108,28 @@
       for (const b of sw.children)
         b.classList.toggle("on", isMd && b.dataset.md === "preview" === shown2);
     }
+    const isCode = d && !d.isImage;
+    const inGit = !!S2.meta?.git;
     const hasDiff = !!(d && d.diffAvailable);
     const isDiffOn = !!(d && d.diffMode);
     const currentLayout = d && d.diffMode || layoutPref();
     const dsw = $("#diff-switch");
     if (dsw) {
-      dsw.hidden = !hasDiff;
+      const showSwitch = inGit && isCode;
+      dsw.hidden = !showSwitch;
       document.body.classList.toggle("diff-tab", hasDiff);
       const btn = $("#diff-btn");
       if (btn) {
+        btn.disabled = !hasDiff;
+        btn.classList.toggle("disabled", !hasDiff);
         btn.classList.toggle("on", hasDiff && isDiffOn);
-        btn.title = withKeys(`Show changes against HEAD, ${currentLayout === "unified" ? "unified" : "split"} ({Mod+D})`);
+        btn.title = hasDiff ? withKeys(`Show changes against HEAD, ${currentLayout === "unified" ? "unified" : "split"} ({Mod+D})`) : "There are no git modified files.";
       }
-      $("#diff-source")?.classList.toggle("on", hasDiff && !isDiffOn);
+      const srcBtn = $("#diff-source");
+      if (srcBtn) {
+        srcBtn.classList.toggle("on", !hasDiff || !isDiffOn);
+        srcBtn.title = withKeys("Show the file ({Mod+D})");
+      }
       const menuItems = dsw.querySelectorAll(".diff-menu-item");
       for (const item of menuItems) {
         item.classList.toggle("active", item.dataset.diffOpt === currentLayout);
@@ -3435,6 +3515,7 @@
       btn.className = "sel-menu-item";
       btn.dataset.sel = item.sel;
       btn.setAttribute("role", "menuitem");
+      btn.title = item.label + (item.keys ? ` (${keyLabel(item.keys)})` : "");
       const label = document.createElement("span");
       label.textContent = item.label;
       btn.append(label);
@@ -3870,6 +3951,10 @@
     }
     S2.active = idx;
     const d = S2.tabs[idx];
+    if (d && d.diffAvailable && (treeEl?.classList.contains("changed-only") || !d.diffDismissed && d.diffMode === null)) {
+      d.diffMode = layoutPref() || "split";
+      d.diffDismissed = false;
+    }
     $("#empty").hidden = true;
     syncImageView();
     syncPreview();
@@ -4099,6 +4184,11 @@
     if (prev)
       prev.scrollTop = vp.scrollTop;
     S2.active = i;
+    const curDoc = S2.tabs[i];
+    if (curDoc && curDoc.diffAvailable && (treeEl?.classList.contains("changed-only") || !curDoc.diffDismissed && curDoc.diffMode === null)) {
+      curDoc.diffMode = layoutPref() || "split";
+      curDoc.diffDismissed = false;
+    }
     syncImageView();
     syncPreview();
     syncDiffView();
@@ -4944,7 +5034,7 @@
         `).join("")}
       </div>
       <div class="vim-help-footer">
-        <button id="btn-switch-to-std-help" class="settings-btn-link">View Standard Shortcuts (?)</button>
+        <button id="btn-switch-to-std-help" class="settings-btn-link" title="View Standard Shortcuts (?)">View Standard Shortcuts (?)</button>
         <span class="agent-hint">Press Esc or click outside to dismiss</span>
       </div>
     </div>
@@ -6211,6 +6301,32 @@
     errEl.textContent = "";
     errEl.hidden = true;
   }
+  function attachAlreadyRunningCancel(errContainer) {
+    const row = document.createElement("div");
+    row.className = "agent-err-actions";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "agent-err-cancel-btn";
+    btn.textContent = "Cancel in-flight edit";
+    btn.title = "Stop and cancel running edits on the server";
+    btn.onclick = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      btn.disabled = true;
+      btn.textContent = "Cancelling...";
+      try {
+        await apiPost("/api/agent/cancel", { id: 0 });
+        showToast("✓", "Cancelled running edit");
+        errContainer.hidden = true;
+      } catch (err) {
+        showToast("!", "Failed to cancel: " + err.message);
+        btn.disabled = false;
+        btn.textContent = "Cancel in-flight edit";
+      }
+    };
+    row.appendChild(btn);
+    errContainer.appendChild(row);
+  }
   function showErr(session, msg, streams = []) {
     const errEl = session.errEl;
     if (!errEl)
@@ -6220,6 +6336,9 @@
     head.className = "agent-err-msg";
     head.textContent = msg;
     errEl.appendChild(head);
+    if (msg && msg.includes("already running")) {
+      attachAlreadyRunningCancel(errEl);
+    }
     for (const [label, text] of streams) {
       if (!text)
         continue;
@@ -6438,6 +6557,9 @@
     head.className = "agent-err-msg";
     head.textContent = msg;
     batchErr.appendChild(head);
+    if (msg && msg.includes("already running")) {
+      attachAlreadyRunningCancel(batchErr);
+    }
     for (const [label, text] of streams) {
       if (!text)
         continue;
@@ -6719,6 +6841,11 @@
       e.preventDefault();
       e.returnValue = "";
     });
+    api("/api/agent/job?id=0").then((j) => {
+      if (j && j.running) {
+        setStatusNote("In-flight edit running on " + (j.path || "workspace") + " (" + (j.harness || "agent") + ")", 6000);
+      }
+    }).catch(() => {});
   }
 
   // web/src/shortcuts.js
@@ -6760,7 +6887,7 @@
   function showHelp() {
     const h = $("#helpsheet");
     const ver = S2.meta?.version ? ` <span class="help-version">v${esc2(S2.meta.version)}</span>` : "";
-    h.innerHTML = '<div class="help-card"><div class="help-header"><h2>Keyboard Shortcuts</h2>' + ver + '<button id="btn-switch-to-vim-help" class="settings-btn-link" style="margin-left:auto;font-size:12px;cursor:pointer;">View Vim Keybindings</button></div><dl class="help-grid">' + SHORTCUTS.map(([combos, v]) => "<dt>" + combos.map(keyCaps).filter(Boolean).join('<span class="key-or">/</span>') + "</dt>" + "<dd>" + esc2(v) + "</dd>").join("") + "</dl></div>";
+    h.innerHTML = '<div class="help-card"><div class="help-header"><h2>Keyboard Shortcuts</h2>' + ver + '<button id="btn-switch-to-vim-help" class="settings-btn-link" style="margin-left:auto;font-size:12px;cursor:pointer;" title="View Vim Keybindings">View Vim Keybindings</button></div><dl class="help-grid">' + SHORTCUTS.map(([combos, v]) => "<dt>" + combos.map(keyCaps).filter(Boolean).join('<span class="key-or">/</span>') + "</dt>" + "<dd>" + esc2(v) + "</dd>").join("") + "</dl></div>";
     h.hidden = false;
     h.querySelector("#btn-switch-to-vim-help")?.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -7387,11 +7514,7 @@
     S2.meta = await api("/api/meta");
     if (S2.meta.metrics)
       updateMetricsDisplay(S2.meta.metrics);
-    if (S2.meta.git) {
-      const b = $("#btn-changed");
-      if (b)
-        b.hidden = false;
-    }
+    updateSidebarToggleState();
     applyAgentMeta();
     document.title = S2.meta.name + " - px0";
     $("#root-name").textContent = S2.meta.name;
@@ -7406,6 +7529,12 @@
       restoreOpenDirs(savedDirs);
     } catch {}
     await refreshTree();
+    const hasGitChanges = !!(S2.meta?.git && S2.meta.gitChanges > 0);
+    if (hasGitChanges) {
+      await setSidebarMode("git");
+    } else {
+      setSidebarMode("files");
+    }
     const params = new URLSearchParams(window.location.search);
     const initialPath = params.get("path");
     const initialLine = parseInt(params.get("line"), 10) || undefined;
@@ -7421,7 +7550,19 @@
         window.history.replaceState({}, "", cleanUrl);
       } catch {}
     } else {
-      await restoreWorkspaceTabs();
+      const restored = await restoreWorkspaceTabs();
+      if (hasGitChanges) {
+        const hasActiveDiff = S2.tabs[S2.active]?.diffAvailable;
+        if (!hasActiveDiff) {
+          const changedTabIdx = S2.tabs.findIndex((t) => t.diffAvailable);
+          if (changedTabIdx >= 0) {
+            switchTab(changedTabIdx);
+          } else if (S2.meta.gitFiles && S2.meta.gitFiles.length > 0) {
+            await openFile(S2.meta.gitFiles[0]);
+            await revealFile(S2.meta.gitFiles[0]);
+          }
+        }
+      }
     }
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(() => {

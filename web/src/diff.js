@@ -280,7 +280,9 @@ export function initDiff() {
   });
   $('#diff-btn')?.addEventListener('click', e => {
     e.stopPropagation();
-    setDiffMode(doc_()?.diffMode || layoutPref());
+    const d = doc_();
+    if (!d || !d.diffAvailable) return;
+    setDiffMode(d.diffMode || layoutPref());
   });
   const menu = $('#diff-menu');
   if (menu) {
