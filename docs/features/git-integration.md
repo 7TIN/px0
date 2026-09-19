@@ -14,6 +14,8 @@ px0 provides non-destructive, zero-latency Git awareness. It queries Git status 
 
 ## Key Capabilities
 
+- **Real-Time Live Status Synchronization**: px0 establishes a lightweight Server-Sent Events (SSE) connection (`/api/git/stream`) to push working-tree status changes directly to the browser. You do not need to refresh the browser or click manual reindex buttons when files change on disk.
+- **Sub-Millisecond CLI Change Awareness**: When you execute Git operations in your terminal (`git checkout`, `git reset`, `git add`, `git commit`, `git restore`, `git stash`), px0 detects the operation in sub-milliseconds by checking metadata timestamps on Git control files (`.git/index`, `.git/HEAD`, `.git/packed-refs`), instantly updating your view without scanning files on disk.
 - **File Tree Status Badges**: The file explorer decorates changed files with colored badges indicating their Git working-tree status:
   - `M` (Modified): Working tree file differs from `HEAD`.
   - `A` (Added / Staged): Newly added file staged in the index.
@@ -21,7 +23,9 @@ px0 provides non-destructive, zero-latency Git awareness. It queries Git status 
   - `U` (Untracked): New file not yet tracked by Git.
   - `R` (Renamed): File renamed or moved.
 - **Dirty Ancestor Folder Propagation**: When a nested file is modified (e.g., `src/core/auth/token.go`), all parent directories in the tree (`auth/`, `core/`, `src/`) display a subtle dirty indicator badge. This allows you to spot modifications even when folder branches are collapsed.
-- **Uncommitted Changes Filter**: A dedicated toggle in the explorer header lets you collapse all clean files and view only files that currently have uncommitted changes.
+- **File Explorer vs. Git Changes Toggle**: A dedicated segmented toggle in the sidebar header allows you to switch between the full project directory tree and the Git changes view. In Git changes mode, px0 collapses untouched folders and presents only files with uncommitted additions, modifications, or deletions.
+- **Automatic Explorer Fallback**: If all uncommitted changes are discarded or committed while you are in Git changes mode, px0 automatically switches back to standard file explorer mode so you are never left viewing an empty tree.
+- **Auto-Closing Discarded Diff Tabs**: When you discard changes to a file from the terminal (`git checkout -- file` or `git reset`), any tab opened in diff view for that file automatically closes in reverse index order, keeping the active tab index stable and preventing stale diff errors.
 - **Visual Gutter Diff Indicators**: The code viewer gutter places colored indicator bars alongside line numbers to mark edits in real time:
   - Green bar for added lines.
   - Blue bar for modified lines.
@@ -32,32 +36,39 @@ px0 provides non-destructive, zero-latency Git awareness. It queries Git status 
   - **Unified**: View changes inline with consecutive additions and deletions.
 - **Whitespace Diff Filtering**: Toggle whitespace trimming to hide trivial indentation and trailing space differences when reviewing significant logic changes.
 - **Direct Agent Editing from Diffs**: Select any modified or added line in the diff view and trigger an AI agent edit (`Alt+E`) to refine or correct the change on the spot.
+- **Battery and Focus Awareness**: The live stream automatically suspends when the browser tab is hidden (`document.visibilityState === 'hidden'`), conserving CPU cycles and laptop battery. When you switch back to px0, it instantly reconnects and queries `/api/git/refresh` to catch any changes made while the window was in the background.
 
 ---
 
 ## Developer Workflows & Practical Value
 
-### Auditing AI Agent Edits
-When an AI coding agent finishes updating a component or fixing a bug:
-1. Glance at the file explorer to see which files were touched.
-2. Open any modified file. The gutter immediately highlights the altered lines.
-3. Press **`Cmd/Ctrl+D`** to open the split diff view.
-4. Review the exact additions and deletions against `HEAD`.
-5. If something needs adjustment, select the code directly in the diff view and press `Alt+E` to prompt the agent with a targeted correction.
+### Continuous Auditing of AI Agent Edits
+When an AI coding agent (Claude Code, Gemini CLI, Cursor Agent, Antigravity, Aider) edits your code in the background:
+1. Switch to the **Git Changes** view in the sidebar to isolate touched files.
+2. Status badges and gutter markers update in real time as the agent writes to disk.
+3. Open any modified file and press **`Cmd/Ctrl+D`** to review side-by-side changes against `HEAD`.
+4. If an edit needs refinement, select the relevant lines directly inside the diff view and press `Alt+E` to prompt the agent with a targeted correction.
 
-### Pre-Commit Review
-Before committing code from your terminal, open px0 to perform a visual walk-through of all pending changes. The uncommitted changes filter isolates your work, ensuring you don't commit debug logs, temporary comments, or unintended formatting tweaks.
+### Terminal Interaction Without Stale Views
+When managing branches or staging files from your terminal:
+1. Stage or reset files in the terminal (`git add file.go` or `git checkout -- file.go`).
+2. px0 immediately catches the `.git/index` modification and patches the file tree badges in place without resetting your scroll position or collapsing expanded folders.
+3. Tabs displaying diffs for discarded files close automatically, keeping your workspace clean and focused.
+
+### Pre-Commit Visual Review Station
+Before committing code from your terminal, open px0 to perform a visual walk-through of all pending changes. The Git changes view isolates your work, ensuring you do not commit debug logs, temporary comments, or unintended formatting tweaks.
 
 ---
 
 ## Keyboard Shortcuts & Controls
 
-| Shortcut | Context | Action |
+| Shortcut / Control | Context | Action |
 | :--- | :--- | :--- |
 | `Cmd/Ctrl+D` | Editor | Toggle Git Diff View (Split / Unified vs. `HEAD`) |
+| Toggle Segment (`Files` / `Changes`) | Sidebar Header | Switch between File Explorer and Changed Files Only |
 | Toggle Icon | Diff Header | Switch between Side-by-Side and Unified Diff |
 | Space Icon | Diff Header | Toggle Ignore Leading/Trailing Whitespace |
-| Filter Icon | File Explorer | Show Only Files with Uncommitted Changes |
+| `Mod+Shift+R` | Global | Force Workspace and Git Status Refresh |
 
 ---
 
@@ -74,4 +85,4 @@ Git behavior can be customized in Settings (`Cmd/Ctrl+,`):
 
 ## Technical Architecture Deep Dive
 
-For an explanation of how px0 executes read-only `git status --porcelain=v2` and `git diff` commands concurrently with directory indexing, see [Git Awareness & Diffing Internals](../internals/git-integration.md).
+For an explanation of how px0 executes read-only `git status --porcelain=v2` and `git diff` commands concurrently with directory indexing, how `.git/index` stat cache fast-paths achieve sub-millisecond CLI detection, and how Server-Sent Events stream diffs to the DOM, see [Git Awareness & Diffing Internals](../internals/git-integration.md).
