@@ -17,7 +17,7 @@ Whenever modifying, adding, or refactoring code in this repository, you must aud
 
 | Component Modified                   | Primary Source Files                                             | Docs to Update                                                                                                   |
 | ------------------------------------ | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| System Architecture / Optimizations  | All `.go` files, `web/app.js`                                    | [`docs/internals/architecture.md`](../internals/architecture.md)                                                 |
+| System Architecture / Optimizations  | All `.go` files, `web/src/*.js`                                  | [`docs/internals/architecture.md`](../internals/architecture.md)                                                 |
 | Indexing / Tree Walk / Gitignore     | `index.go`, `ignore.go`                                          | [`docs/internals/indexing-and-ignore.md`](../internals/indexing-and-ignore.md), [`README.md`](../../README.md)    |
 | Fuzzy File Finder                    | `fuzzy.go`                                                       | [`docs/internals/fuzzy-search.md`](../internals/fuzzy-search.md)                                                 |
 | Search / Regex / Symbol Outlines     | `search.go`, `symbols.go`                                        | [`docs/internals/workspace-search.md`](../internals/workspace-search.md), [`BENCHMARKS.md`](../../BENCHMARKS.md) |
@@ -25,7 +25,7 @@ Whenever modifying, adding, or refactoring code in this repository, you must aud
 | Language Servers (LSP)               | `lsp.go`, `lspnav.go`, `lspservers.go`, `lspsetup.go`, `calls.go`| [`docs/internals/lsp-and-intelligence.md`](../internals/lsp-and-intelligence.md), [`README.md`](../../README.md)|
 | Git Integration & Diffing            | `git.go`                                                         | [`docs/internals/git-integration.md`](../internals/git-integration.md)                                           |
 | Harness Editing / Agent Dispatch     | `agent.go`, `settings.go`, `web/src/agent.js`, `web/src/selbar.js` | [`docs/internals/agent-editing.md`](../internals/agent-editing.md), [`README.md`](../../README.md)                |
-| Frontend UI / Virtualization         | `web/app.js`, `web/index.html`, `web/style.css`                  | [`docs/internals/editor-virtualization.md`](../internals/editor-virtualization.md), [`README.md`](../../README.md)|
+| Frontend UI / Virtualization         | `web/src/*.js`, `web/index.html`, `web/style.css`                | [`docs/internals/editor-virtualization.md`](../internals/editor-virtualization.md), [`README.md`](../../README.md)|
 | Markdown Preview                     | `markdown.go`, `web/src/markdown.js`                             | [`docs/internals/markdown.md`](../internals/markdown.md), [`docs/internals/styling-and-themes.md`](../internals/styling-and-themes.md) |
 | Themes / Colour Tokens               | `web/themes/*.css`, `web/style.css`, `web/src/theme.js`          | [`docs/internals/styling-and-themes.md`](../internals/styling-and-themes.md)                                    |
 | User-Facing Features / Workflows    | All features, UX, and controls                                   | [`docs/features/README.md`](../features/README.md)                                                               |
@@ -37,7 +37,6 @@ Whenever modifying, adding, or refactoring code in this repository, you must aud
 
 - Verification: Ran `go test ./...` and confirmed all unit/regression tests pass (`ok px0`).
 - Build Integrity: Verified successful build with `go build -o px0 .`.
-- Web Bundling: If modifying `web/src/`, verified bundle update with `./scripts/build-web.js`.
 - Architecture Sync: Any new optimization, algorithmic adjustment, or structural change is documented in the corresponding [`docs/internals/`](../internals/README.md) write-up.
 - Flag & Shortcut Sync: Any new keyboard shortcut, UI behavior, or CLI flag is reflected in [`README.md`](../../README.md).
 - Benchmark Alignment: If search, highlight, or index performance characteristics change, verify whether [`BENCHMARKS.md`](../../BENCHMARKS.md) requires updated notes or numbers.
@@ -54,7 +53,7 @@ When committing a version bump (triggered after the user updates the `VERSION` f
 
 ## 5. Frontend Architecture & Code Map for Agents
 
-To quickly locate and modify UI features, refer to this structured section index of [`web/index.html`](../../web/index.html) and `web/app.js`:
+To quickly locate and modify UI features, refer to this structured section index of [`web/index.html`](../../web/index.html) and [`web/src/`](../../web/src/):
 
 ### HTML Structure
 
@@ -79,7 +78,7 @@ To quickly locate and modify UI features, refer to this structured section index
 
 ### Frontend Modules (`web/src/`)
 
-The frontend is modularized into clean ES modules under `web/src/` and bundled into `web/app.js` using `scripts/build-web.js`:
+The frontend is modularized into clean ES modules under `web/src/` (bundled into `web/app.js` during build and release pipelines via `scripts/build-web.js`):
 
 | Module                 | Primary Responsibilities & Key Exports                                                                                                                                                       |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
