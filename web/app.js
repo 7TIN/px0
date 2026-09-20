@@ -71,6 +71,7 @@
     histIdx: -1,
     find: null,
     occ: null,
+    occHits: null,
     selAll: null,
     lastWord: "",
     at: null,
@@ -1028,8 +1029,8 @@
     findbar.hidden = true;
     S2.find = null;
     $("#find-count").textContent = "0";
-    $("#minimap-hits").innerHTML = "";
     clearPreviewMarks();
+    renderMinimap();
     paint();
   }
   var runFind = debounce(async () => {
@@ -1049,7 +1050,7 @@
     if (!q) {
       S2.find = null;
       $("#find-count").textContent = "0";
-      $("#minimap-hits").innerHTML = "";
+      renderMinimap();
       paint();
       return;
     }
@@ -1071,20 +1072,95 @@
     }
     S2.find = { q, ci: false, hits, byLine: new Set(hits.map((h) => h.line)), active: hits.length ? 0 : -1 };
     $("#find-count").textContent = hits.length ? "1 / " + hits.length : "no results";
-    drawMinimap(hits, d.total);
+    renderMinimap();
     if (hits.length)
       jumpToHit(0);
     else
       paint();
   }, 140);
-  function drawMinimap(hits, total) {
+  function renderMinimap() {
     const mm = $("#minimap-hits");
-    if (!hits.length) {
+    if (!mm)
+      return;
+    const d = doc_();
+    if (!d) {
       mm.innerHTML = "";
       return;
     }
+    let html = "";
+    if (S2.find && S2.find.hits && S2.find.hits.length && !S2.find.preview) {
+      const seen = new Set;
+      for (const h of S2.find.hits) {
+        if (!h || h.line == null || seen.has(h.line))
+          continue;
+        seen.add(h.line);
+        html += '<i style="top:' + ((h.line - 1) / d.total * 100).toFixed(3) + '%"></i>';
+      }
+    }
+    const sameAsFind = S2.find && S2.find.hits && S2.find.hits.length && S2.find.q === S2.occ;
+    if (S2.occ && S2.occHits && S2.occHits.length && !sameAsFind) {
+      const seen = new Set;
+      for (const h of S2.occHits) {
+        if (seen.has(h.line))
+          continue;
+        seen.add(h.line);
+        html += '<i class="occ" data-l="' + h.line + '" title="' + h.line + '" style="top:' + ((h.line - 1) / d.total * 100).toFixed(3) + '%"></i>';
+      }
+    }
+    mm.innerHTML = html;
+  }
+  function occEnabled() {
+    const v = S2.settings && S2.settings["editor.occurrencesHighlight"];
+    return v !== false && v !== "false";
+  }
+  var occSeq = 0;
+  async function refreshOccMinimap() {
+    const d = doc_();
+    const word = S2.occ;
+    const my = ++occSeq;
+    if (!word || !d || !occEnabled()) {
+      if (S2.occHits) {
+        S2.occHits = null;
+        renderMinimap();
+      } else
+        renderMinimap();
+      return;
+    }
+    let j;
+    try {
+      j = await api("/api/search", { q: word, glob: d.path, case: 1 });
+    } catch {
+      return;
+    }
+    if (my !== occSeq || S2.occ !== word || doc_() !== d)
+      return;
+    const f = (j.results || []).find((r) => r.path === d.path);
+    if (!f) {
+      S2.occHits = [];
+      renderMinimap();
+      return;
+    }
     const seen = new Set;
-    mm.innerHTML = hits.filter((h) => !seen.has(h.line) && seen.add(h.line)).map((h) => '<i style="top:' + ((h.line - 1) / total * 100).toFixed(3) + '%"></i>').join("");
+    const hits = [];
+    for (const m of f.matches) {
+      if (seen.has(m.line))
+        continue;
+      seen.add(m.line);
+      hits.push({ line: m.line });
+      if (hits.length >= 5000)
+        break;
+    }
+    S2.occHits = hits;
+    renderMinimap();
+  }
+  function clearOcc() {
+    if (!S2.occ && !S2.occHits)
+      return;
+    occSeq++;
+    S2.occ = null;
+    S2.occHits = null;
+    renderMinimap();
+    paint();
   }
   function jumpToHit(i) {
     const d = doc_();
@@ -1841,8 +1917,10 @@
         S2.at = w;
         S2.lastWord = w.word;
       }
-      S2.occ = w && w.word.length > 1 ? w.word : null;
+      S2.occ = w && w.word.length > 1 && occEnabled() ? w.word : null;
+      S2.occHits = null;
       paint();
+      refreshOccMinimap();
     });
   }
 
@@ -3996,6 +4074,11 @@
     }
     S2.active = idx;
     const d = S2.tabs[idx];
+    if (S2.occ) {
+      S2.occHits = null;
+      renderMinimap();
+      refreshOccMinimap();
+    }
     if (d && d.diffAvailable && (treeEl?.classList.contains("changed-only") || !d.diffDismissed && d.diffMode === null)) {
       d.diffMode = layoutPref() || "split";
       d.diffDismissed = false;
@@ -4150,6 +4233,11 @@
     drawTabs();
     drawCrumbs();
     updateStatus();
+    if (S2.occ) {
+      S2.occHits = null;
+      renderMinimap();
+      refreshOccMinimap();
+    }
     saveWorkspaceState();
   }
   function centerLine(n) {
@@ -4184,6 +4272,7 @@
       syncDiffView();
       rowsEl.innerHTML = "";
       sizer.style.height = "0px";
+      renderMinimap();
       $("#empty").hidden = false;
       drawCrumbs();
       drawTabs();
@@ -4200,6 +4289,11 @@
     syncImageView();
     syncPreview();
     syncDiffView();
+    if (S2.occ) {
+      S2.occHits = null;
+      renderMinimap();
+      refreshOccMinimap();
+    }
     drawTabs();
     drawCrumbs();
     layout();
@@ -4248,6 +4342,11 @@
     clearFind();
     clearSelectAll();
     S2.at = null;
+    if (S2.occ) {
+      S2.occHits = null;
+      renderMinimap();
+      refreshOccMinimap();
+    }
     S2.lsp.state = S2.tabs[i].lsp && S2.tabs[i].lsp.state || "off";
     S2.lsp.server = S2.tabs[i].lsp && S2.tabs[i].lsp.server || "";
     S2.lsp.missing = S2.tabs[i].lsp && S2.tabs[i].lsp.missing || "";
@@ -4952,7 +5051,9 @@
           S2.at = w;
           S2.lastWord = w.word;
           S2.occ = w.word;
+          S2.occHits = null;
           paint();
+          refreshOccMinimap();
           openFind(w.word);
           findNextMatch(1);
         }
@@ -4966,7 +5067,9 @@
           S2.at = w;
           S2.lastWord = w.word;
           S2.occ = w.word;
+          S2.occHits = null;
           paint();
+          refreshOccMinimap();
           openFind(w.word);
           findNextMatch(-1);
         }
@@ -5528,6 +5631,18 @@
         const minimap = $("#minimap-hits");
         if (minimap)
           minimap.style.display = val === false || val === "false" ? "none" : "";
+        break;
+      }
+      case "editor.occurrencesHighlight": {
+        const on = !(val === false || val === "false");
+        if (!on && (S2.occ || S2.occHits)) {
+          S2.occ = null;
+          S2.occHits = null;
+          const mm = $("#minimap-hits");
+          if (mm)
+            mm.querySelectorAll("i.occ").forEach((el) => el.remove());
+          paint();
+        }
         break;
       }
       case "workbench.colorTheme": {
@@ -6926,7 +7041,7 @@
     [["Alt+Shift+T"], "Reopen closed tab"],
     [["Ctrl+Tab"], "Next tab"],
     [["Alt+1…9"], "Select tab"],
-    [["Double click"], "Highlight all occurrences"],
+    [["Double click"], "Highlight all occurrences + minimap"],
     [["Mod+A"], "Select whole file"],
     [["Alt+C", "Alt+A"], "Copy selection ref / with context"],
     [["Alt+U"], "Find usages of selection"],
@@ -7027,8 +7142,7 @@
           return;
         }
         if (S2.occ) {
-          S2.occ = null;
-          paint();
+          clearOcc();
           return;
         }
         if (inField(document.activeElement))
