@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"compress/gzip"
 	"context"
 	"embed"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"mime"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -121,17 +123,48 @@ func (s *Server) scavenge() {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.lastReq.Store(time.Now().UnixNano())
-	w.Header().Set("Cache-Control", "no-store")
-	if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-		s.mux.ServeHTTP(w, r)
-		return
+	start := time.Now()
+
+	rec := &statusRecorder{ResponseWriter: w}
+	if uiVerbose {
+		defer func() {
+			dur := fmtDuration(time.Since(start))
+			status := rec.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			role := "info"
+			if status >= 500 {
+				role = "err"
+			} else if status >= 400 {
+				role = "warn"
+			}
+			uri := r.RequestURI
+			if uri == "" {
+				uri = r.URL.RequestURI()
+			}
+			if uri == "" {
+				uri = r.URL.Path
+			}
+			if uri == "" {
+				uri = "/"
+			}
+			uiStatus(role, "http", fmt.Sprintf("%s %s · %d  (%s)", r.Method, uri, status, dur), 0, os.Stdout)
+		}()
 	}
-	w.Header().Set("Content-Encoding", "gzip")
-	w.Header().Add("Vary", "Accept-Encoding")
-	gz := gzipPool.Get().(*gzip.Writer)
-	gz.Reset(w)
-	defer func() { gz.Close(); gzipPool.Put(gz) }()
-	s.mux.ServeHTTP(gzipWriter{ResponseWriter: w, w: gz}, r)
+
+	var out http.ResponseWriter = rec
+	w.Header().Set("Cache-Control", "no-store")
+	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") && r.URL.Path != "/api/git/stream" {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Vary", "Accept-Encoding")
+		gz := gzipPool.Get().(*gzip.Writer)
+		gz.Reset(rec)
+		defer func() { gz.Close(); gzipPool.Put(gz) }()
+		out = gzipWriter{ResponseWriter: rec, w: gz}
+	}
+
+	s.mux.ServeHTTP(out, r)
 }
 
 var gzipPool = sync.Pool{New: func() any {
@@ -145,6 +178,56 @@ type gzipWriter struct {
 }
 
 func (g gzipWriter) Write(b []byte) (int, error) { return g.w.Write(b) }
+
+func (g gzipWriter) Flush() {
+	_ = g.w.Flush()
+	if flusher, ok := g.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (g gzipWriter) Unwrap() http.ResponseWriter {
+	return g.ResponseWriter
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	bytes  int64
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	if r.status == 0 {
+		r.status = status
+	}
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *statusRecorder) Write(b []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	n, err := r.ResponseWriter.Write(b)
+	r.bytes += int64(n)
+	return n, err
+}
+
+func (r *statusRecorder) Flush() {
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hijacker, ok := r.ResponseWriter.(http.Hijacker); ok {
+		return hijacker.Hijack()
+	}
+	return nil, nil, errors.New("hijack unsupported")
+}
+
+func (r *statusRecorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
+}
 
 // safePath resolves a client-supplied relative path inside the root, refusing
 // anything that escapes it.

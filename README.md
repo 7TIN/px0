@@ -261,6 +261,7 @@ px0 --update
 | `-no-agent`  | `false`     | Do not offer editing through a coding harness                   |
 | `-no-telemetry` | `false`  | Disable anonymous usage telemetry                               |
 | `-no-color`  | `false`     | Strip ANSI escape sequences from terminal output                |
+| `-verbose`   | `false`     | Log every HTTP request, searches, symbols, and agent prompts    |
 | `-quiet`     | `false`     | Suppress CLI narration (errors still print to stderr)           |
 | `-update`    | `false`     | Check for updates and install the latest version                |
 | `-version`   | `false`     | Print version and architecture and exit                         |

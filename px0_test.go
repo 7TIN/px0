@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -725,3 +726,81 @@ func TestMetaIncludesVersion(t *testing.T) {
 		t.Fatalf("expected version %q in /api/meta, got %v", version, body["version"])
 	}
 }
+
+func TestVerboseRequestLogging(t *testing.T) {
+	origVerbose := uiVerbose
+	origQuiet := uiQuiet
+	defer func() {
+		uiVerbose = origVerbose
+		uiQuiet = origQuiet
+	}()
+
+	s, _ := newTestServer(t)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() failed: %v", err)
+	}
+	origStdout := os.Stdout
+	os.Stdout = w
+	defer func() {
+		os.Stdout = origStdout
+	}()
+
+	uiVerbose = true
+	uiQuiet = false
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/tree", nil)
+	s.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	rec404 := httptest.NewRecorder()
+	req404 := httptest.NewRequest(http.MethodGet, "/api/nonexistent", nil)
+	s.ServeHTTP(rec404, req404)
+
+	w.Close()
+	out, _ := io.ReadAll(r)
+	r.Close()
+
+	logOutput := string(out)
+	if !strings.Contains(logOutput, "GET /api/tree · 200") {
+		t.Errorf("expected log output to contain 'GET /api/tree · 200', got:\n%s", logOutput)
+	}
+	if !strings.Contains(logOutput, "GET /api/nonexistent · 404") {
+		t.Errorf("expected log output to contain 'GET /api/nonexistent · 404', got:\n%s", logOutput)
+	}
+}
+
+func TestStatusRecorderInterfaces(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sr := &statusRecorder{ResponseWriter: rec}
+
+	// Verify http.Flusher
+	if flusher, ok := any(sr).(http.Flusher); ok {
+		flusher.Flush()
+		if !rec.Flushed {
+			t.Error("expected Flush to propagate to underlying recorder")
+		}
+	} else {
+		t.Error("statusRecorder does not implement http.Flusher")
+	}
+
+	// Verify Unwrap
+	if unwrapped := sr.Unwrap(); unwrapped != rec {
+		t.Errorf("expected Unwrap to return %p, got %p", rec, unwrapped)
+	}
+
+	// Verify gzipWriter Flusher and Unwrap
+	gw := gzipWriter{ResponseWriter: rec}
+	if _, ok := any(gw).(http.Flusher); !ok {
+		t.Error("gzipWriter does not implement http.Flusher")
+	}
+	if unwrapped := gw.Unwrap(); unwrapped != rec {
+		t.Errorf("expected gzipWriter Unwrap to return %p, got %p", rec, unwrapped)
+	}
+}
+

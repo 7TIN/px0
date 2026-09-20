@@ -63,6 +63,7 @@ When a build or test suite fails on a remote CI runner, download px0, run it in 
 | `-no-git` | `false` | Disable Git status checks and diff viewing |
 | `-agent H` | none | Pin active coding agent harness for session |
 | `-no-agent` | `false` | Disable coding agent editing features entirely |
+| `-verbose` | `false` | Log every HTTP request, searches, symbols, and agent prompts to terminal |
 | `-quiet` | `false` | Suppress CLI narration on stdout |
 | `-update` | `false` | Check for updates and install latest release |
 | `-version` | `false` | Print version and architecture and exit |
