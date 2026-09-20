@@ -42,7 +42,17 @@ Whenever modifying, adding, or refactoring code in this repository, you must aud
 - Flag & Shortcut Sync: Any new keyboard shortcut, UI behavior, or CLI flag is reflected in [`README.md`](../../README.md).
 - Benchmark Alignment: If search, highlight, or index performance characteristics change, verify whether [`BENCHMARKS.md`](../../BENCHMARKS.md) requires updated notes or numbers.
 
-## 4. Frontend Architecture & Code Map for Agents
+## 4. Version Bump & Release Verification Protocol
+
+When committing a version bump (triggered after the user updates the `VERSION` file):
+1. **Verify Release Pipeline First**: Before creating the version bump commit, verify that all GitHub release scripts and build workflows are working cleanly without errors:
+   - Frontend bundling: Verify `node ./scripts/build-web.js` passes with zero identifier collisions under both Bun and Node fallback.
+   - Build & Cross-Compilation: Verify `go test ./...` passes and target builds in `build.sh` / `.github/workflows/release.yml` compile cleanly.
+   - Release Configuration: Verify checksums, release workflow definitions, and installer compatibility.
+2. **Commit Release Fixes First**: If any release scripts, bundlers, or workflow configurations need updates or fixes, make those changes and commit them in a separate commit first.
+3. **Commit Version Bump**: Finally, create the version bump commit staging `VERSION` with the updated version number that the user started with (following the `ape-commit` format).
+
+## 5. Frontend Architecture & Code Map for Agents
 
 To quickly locate and modify UI features, refer to this structured section index of [`web/index.html`](../../web/index.html) and `web/app.js`:
 
