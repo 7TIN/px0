@@ -3,14 +3,12 @@ import { updateSidebarToggleState, patchTreeGitStatus, treeEl, setSidebarMode } 
 import { drawTabs, loadGutter, closeTab } from './tabs.js';
 import { syncDiffView } from './diff.js';
 import { render } from './renderer.js';
-import { updateStatus } from './status.js';
+import { updateStatus, updateMetricsDisplay } from './status.js';
 
 let eventSource = null;
 let reconnectTimer = null;
 
 export function initGitStream() {
-  if (!S.meta?.git) return;
-
   connect();
 
   // Instant refresh when user focuses the browser window
@@ -52,12 +50,21 @@ function connect() {
   }
 
   try {
-    eventSource = new EventSource('/api/git/stream');
+    eventSource = new EventSource('/api/stream');
 
     eventSource.addEventListener('git-status', async e => {
       try {
         const data = JSON.parse(e.data);
         await handleGitStatus(data);
+      } catch (err) {
+        // Drop malformed frame
+      }
+    });
+
+    eventSource.addEventListener('metrics', e => {
+      try {
+        const data = JSON.parse(e.data);
+        updateMetricsDisplay(data);
       } catch (err) {
         // Drop malformed frame
       }

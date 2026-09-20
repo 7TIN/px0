@@ -206,9 +206,6 @@ export function initMetrics() {
   addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeMetricsMenu();
   });
-
-  refreshMetrics();
-  setInterval(refreshMetrics, 2500);
 }
 
 /* The status bar stays on one line. When its contents outgrow the width, it

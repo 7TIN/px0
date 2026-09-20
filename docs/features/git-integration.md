@@ -14,7 +14,7 @@ px0 provides non-destructive, zero-latency Git awareness. It queries Git status 
 
 ## Key Capabilities
 
-- **Real-Time Live Status Synchronization**: px0 establishes a lightweight Server-Sent Events (SSE) connection (`/api/git/stream`) to push working-tree status changes directly to the browser. You do not need to refresh the browser or click manual reindex buttons when files change on disk.
+- **Real-Time Live Status Synchronization**: px0 establishes a lightweight Server-Sent Events (SSE) connection (`/api/stream`, aliased by `/api/git/stream`) to push working-tree status changes directly to the browser. You do not need to refresh the browser or click manual reindex buttons when files change on disk.
 - **Sub-Millisecond CLI Change Awareness**: When you execute Git operations in your terminal (`git checkout`, `git reset`, `git add`, `git commit`, `git restore`, `git stash`), px0 detects the operation in sub-milliseconds by checking metadata timestamps on Git control files (`.git/index`, `.git/HEAD`, `.git/packed-refs`), instantly updating your view without scanning files on disk.
 - **File Tree Status Badges**: The file explorer decorates changed files with colored badges indicating their Git working-tree status:
   - `M` (Modified): Working tree file differs from `HEAD`.

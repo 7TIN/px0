@@ -71,7 +71,8 @@ func NewServer(ix *Index, lsp *lspManager) *Server {
 	s.mux.HandleFunc("/api/markdown", s.handleMarkdown)
 	s.mux.HandleFunc("/api/diff", s.handleDiff)
 	s.mux.HandleFunc("/api/gutter", s.handleGutter)
-	s.mux.HandleFunc("/api/git/stream", s.handleGitStream)
+	s.mux.HandleFunc("/api/stream", s.handleEventStream)
+	s.mux.HandleFunc("/api/git/stream", s.handleEventStream)
 	s.mux.HandleFunc("/api/git/refresh", s.handleGitRefresh)
 	s.mux.HandleFunc("/api/search", s.handleSearch)
 	s.mux.HandleFunc("/api/outline", s.handleOutline)
@@ -122,7 +123,10 @@ func (s *Server) scavenge() {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.lastReq.Store(time.Now().UnixNano())
+	isSSE := r.URL.Path == "/api/stream" || r.URL.Path == "/api/git/stream" || r.Header.Get("Accept") == "text/event-stream"
+	if r.URL.Path != "/api/metrics" && !isSSE {
+		s.lastReq.Store(time.Now().UnixNano())
+	}
 	start := time.Now()
 
 	rec := &statusRecorder{ResponseWriter: w}
@@ -155,7 +159,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var out http.ResponseWriter = rec
 	w.Header().Set("Cache-Control", "no-store")
-	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") && r.URL.Path != "/api/git/stream" {
+	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") && !isSSE {
 		w.Header().Set("Content-Encoding", "gzip")
 		w.Header().Add("Vary", "Accept-Encoding")
 		gz := gzipPool.Get().(*gzip.Writer)
@@ -734,8 +738,8 @@ func (s *Server) handleGutter(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleGitStream streams real-time git status notifications via Server-Sent Events (SSE).
-func (s *Server) handleGitStream(w http.ResponseWriter, r *http.Request) {
+// handleEventStream streams real-time workspace events (git status notifications and process metrics) via Server-Sent Events (SSE).
+func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
@@ -747,17 +751,48 @@ func (s *Server) handleGitStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	ch, cancel := s.gitWatcher.Subscribe()
-	defer cancel()
-
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
+
+	includeMetrics := r.URL.Path != "/api/git/stream"
+
+	// 1. Immediately send initial metrics on connection (for unified stream)
+	if includeMetrics {
+		if mBytes, err := json.Marshal(getProcessMetrics()); err == nil {
+			if _, err := fmt.Fprintf(w, "event: metrics\ndata: %s\n\n", mBytes); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+
+	// 2. Subscribe to git watcher if available
+	var gitCh <-chan []byte
+	if s.gitWatcher != nil {
+		var cancel func()
+		gitCh, cancel = s.gitWatcher.Subscribe()
+		defer cancel()
+	}
+
+	// 3. Periodic metrics ticker (2500ms) for unified stream
+	var metricsTicker *time.Ticker
+	var metricsC <-chan time.Time
+	if includeMetrics {
+		metricsTicker = time.NewTicker(2500 * time.Millisecond)
+		defer metricsTicker.Stop()
+		metricsC = metricsTicker.C
+	}
+
+	// 4. Heartbeat ticker (15s) in case gitWatcher is disabled or not ticking
+	heartbeatTicker := time.NewTicker(15 * time.Second)
+	defer heartbeatTicker.Stop()
 
 	for {
 		select {
 		case <-r.Context().Done():
 			return
-		case msg, ok := <-ch:
+
+		case msg, ok := <-gitCh:
 			if !ok {
 				return
 			}
@@ -765,6 +800,22 @@ func (s *Server) handleGitStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			flusher.Flush()
+
+		case <-metricsC:
+			if mBytes, err := json.Marshal(getProcessMetrics()); err == nil {
+				if _, err := fmt.Fprintf(w, "event: metrics\ndata: %s\n\n", mBytes); err != nil {
+					return
+				}
+				flusher.Flush()
+			}
+
+		case <-heartbeatTicker.C:
+			if s.gitWatcher == nil {
+				if _, err := w.Write([]byte(": ping\n\n")); err != nil {
+					return
+				}
+				flusher.Flush()
+			}
 		}
 	}
 }

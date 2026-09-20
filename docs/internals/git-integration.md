@@ -145,9 +145,9 @@ To keep git statuses, sidebar badges, and editor gutter diff indicators in sync 
    - `Index.UpdateGitStatus()` executes `gitStatus(ix.root)` concurrently, compares the new status map against `ix.gitStatusMap`, and if changed, updates `Node.Status` and `Node.Dirty` in-place on existing `ix.children` nodes.
    - If the status map is identical, no memory allocations or broadcasts occur.
 
-5. **Server-Sent Events (SSE) Stream (`/api/git/stream`)**
+5. **Server-Sent Events (SSE) Stream (`/api/stream` / `/api/git/stream`)**
    - Implemented using Go standard library `http.Flusher` without external dependencies.
-   - Dispatches structured events:
+   - Dispatches structured events (`git-status` and `metrics`):
      ```
      event: git-status
      data: {"git":true,"gitChanges":2,"gitFiles":["main.go","git.go"],"statuses":{"main.go":"M","git.go":"M"},"dirtyDirs":{"web":true}}
